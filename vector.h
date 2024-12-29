@@ -2,6 +2,7 @@
 #define VECTOR_H
 
 #include <stdlib.h>
+#include <math.h>
 
 typedef struct vector3D{
     float x;
@@ -201,7 +202,7 @@ float dotProduct(vector3D* v1, vector3D* v2){
     return v1->x*v2->x + v1->y*v2->y + v1->z*v2->z;
 }
 float getMagnitude(vector3D * v){
-    return sqrt(v->x*v->x + v->y*v->y + v->z*v->z);
+    return sqrtf(v->x*v->x + v->y*v->y + v->z*v->z);
 }
 vector3D* normalizeVector(vector3D * v){
     vector3D * vector = scaleVector(v, 1/getMagnitude(v));
