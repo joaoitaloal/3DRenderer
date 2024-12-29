@@ -52,6 +52,48 @@ Collision* checkRayCollisions(vector3D * dir, vector3D * origin, ObjectList * sc
     return collision;
 }
 
+Color* checkCollisionColor(Collision* col, Color* ALI, vector3D* camera, LightList* lights){
+    //Color* drawn_color = productColors(col->colObject->material->ambient, ALI);
+    Color * drawn_color = create_color(0, 0, 0);
+
+    vector3D* normalized = normalizeVector(subtractVectors(col->colObject->center, col->colPoint));
+    vector3D* view = subtractVectors(col->colPoint , normalizeVector(camera));
+
+    LightList* index = lights; //creio que não é pra dar free nesse index
+    while(index != NULL){
+        vector3D* L = normalizeVector(subtractVectors(col->colPoint, index->light->position));
+        float dot = dotProduct(L, normalized);
+        vector3D* reflectance = subtractVectors(L, scaleVector(normalized, 2*dot));
+        float dot2 = dotProduct(reflectance, view);
+        if(dot < 0){
+            index = index->next;
+            continue;
+        };
+        //O addColors cria e retorna uma cor nova, eu devia dar free no espaço que tava alocado antes?
+        //que horror
+        drawn_color = addColors(drawn_color, clampColor(scaleColor(productColors(index->light->diffuse, col->colObject->material->diffuse), dot), 0, 1));
+
+        dot2 = pow(dot2 , col->colObject->material->albedo);
+        drawn_color = addColors(drawn_color, clampColor(scaleColor(productColors(index->light->specular, col->colObject->material->specular), dot2), 0, 1));
+
+        free(L);
+        free(reflectance);
+        
+        index = index->next;
+    }
+    /*if(drawn_color->blue < 0 || drawn_color->green < 0 || drawn_color->red < 0){
+        printf("colors: r: %f g: %f b: %f\n", drawn_color->red, drawn_color->green, drawn_color->blue);
+    }*/
+    drawn_color = addColors(drawn_color, productColors(col->colObject->material->ambient, ALI));
+    drawn_color = addColors(drawn_color, scaleColor(col->colObject->color, 0.2));
+
+    free(normalized);
+    free(view);
+
+
+    return clampColor(drawn_color, 0, 1);
+}
+
 int main(){
     vector3D* camera = create_vector3D(0, 0, -1);
     plane3D* plane = create_plane3D(1, 0.66);
@@ -59,14 +101,14 @@ int main(){
     ObjectList* scene = create_objectlist();
     LightList* lights = create_lightlist();
 
-    Light* light1 = create_light(400, 200, 20, create_color(0.1, 0.1, 0.1), create_color(0.1, 0.1, 0.1));
-    Light* light2 = create_light(-150, 20, 40, create_color(0.1, 0.1, 0.1), create_color(0.1, 0.1, 0.1));
+    Light* light1 = create_light(100, 100, -20, create_color(0.2, 0.1, 0.3), create_color(0.1, 0.1, 0.1));
+    Light* light2 = create_light(-50, -200, -60, create_color(0.5, 0.5, 0.1), create_color(0.1, 0.1, 0.1));
     lights = add_to_lightlist(lights, light1);
     lights = add_to_lightlist(lights, light2);
 
-    Sphere* sphere1 = create_sphere(0, 0, 30, 10, 1, 0, 1, create_material(0.1,0.1,0.1, 1));
-    Sphere* sphere2 = create_sphere(-20, 5, 40, 8, 0, 0.5, 1, create_material(0.1, 0.1, 0.1, 1));
-    Sphere* sphere3 = create_sphere(20, 0, 50, 3, 0.3, 0.5, 0.3, create_material(0.1, 0.1, 0.1, 1));
+    Sphere* sphere1 = create_sphere(0, 0, 30, 10, 1, 0, 1, create_material(0.2, 0.5, 0.1, 1));
+    Sphere* sphere2 = create_sphere(-20, 5, 40, 8, 0, 0.5, 1, create_material(0.2, 0.5, 0.1, 1));
+    Sphere* sphere3 = create_sphere(20, 0, 50, 3, 0.3, 0.5, 0.3, create_material(0.2, 0.5, 0.1, 1));
     scene = add_to_objectlist(scene, sphere1);
     scene = add_to_objectlist(scene, sphere2);
     scene = add_to_objectlist(scene, sphere3);
@@ -92,38 +134,21 @@ int main(){
             //SDL_SetRenderDrawColor(renderer, 255-(63.75*direction->x+127.5), 255-(42.5*direction->y+127.5), 125, 255);
 
             Collision* collision = checkRayCollisions(direction, origin, scene);
+            //if(collision != NULL && collision->colPoint->y == 0)
+                //printf("colpoint: x: %f y: %f z: %f    esfera: raio: %f\n", collision->colPoint->x, collision->colPoint->y, collision->colPoint->z, collision->colObject->radius);
             if(collision == NULL){
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             }else{
-                Color* drawn_color = productColors(collision->colObject->color, ALI);
-                vector3D* normalized = normalizeVector(subtractVectors(collision->colObject->center, collision->colPoint));
-
-                LightList* index = lights; //creio que não é pra dar free nesse index
-                while(index != NULL){
-                    vector3D* L = normalizeVector(subtractVectors(collision->colPoint, index->light->position));
-                    float dot = dotProduct(L, normalized);
-                    if(dot >= 0){
-                        //O addColors cria e retorna uma cor nova, eu devia dar free no espaço que tava alocado antes?
-                        //que horror
-                        drawn_color = addColors(drawn_color, scaleColor(productColors(index->light->diffuse, collision->colObject->material->diffuse), dot));
-
-                        vector3D* reflectance = scaleVector(subtractVectors(L, normalized), 2*dot);
-                        vector3D* view = subtractVectors(collision->colPoint , normalizeVector(camera));
-                        dot = pow(dotProduct(reflectance, view), collision->colObject->material->albedo);
-                        drawn_color = addColors(drawn_color, scaleColor(productColors(index->light->specular, collision->colObject->material->specular), dot));
-                    }
-
-                    index = index->next;
-                }
-                drawn_color = clampColor(drawn_color, 0, 1);
-                SDL_SetRenderDrawColor(renderer, (int)(drawn_color->red*255), (int)(drawn_color->green*255), (int)(drawn_color->blue*255), 255);
+                Color* renderedColor = checkCollisionColor(collision, ALI, camera, lights);
+                SDL_SetRenderDrawColor(renderer, (int)(renderedColor->red*255), (int)(renderedColor->green*255), (int)(renderedColor->blue*255), 255);
+                free(renderedColor);
             }
 
             SDL_RenderDrawPoint(renderer, x, HEIGHT-y);
 
-            //printf("x: %f, y: %f, z: %f    screenx: %d, screeny: %d    alpha: %f, beta: %f\n", direction->x, direction->y, direction->z, x, y, alpha, beta);
             free(origin);
             free(direction);
+            free(collision);
         }
     }
     
