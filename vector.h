@@ -44,7 +44,7 @@ typedef struct Sphere{
 } Sphere;
 
 typedef struct Collision{
-    vector3D* colPoint;
+    vector3D colPoint;
     Sphere* colObject;
 } Collision;
 
@@ -123,6 +123,8 @@ Light * create_light(float x, float y, float z, Color* diffuse, Color* specular)
 void destroy_light(Light* light){
 
     free(light->position);
+    free(light->diffuse);
+    free(light->specular);
 
     free(light);
     return;
@@ -145,6 +147,7 @@ void destroy_material(Material* material){
     free(material->diffuse);
     free(material->specular);
 
+    free(material);
     return;
 }
 
@@ -166,31 +169,42 @@ void destroy_sphere(Sphere* sphere){
     free(sphere->color);
     destroy_material(sphere->material);
 
+    free(sphere);
     return;
 }
 
-Collision * create_collision(vector3D* colPoint, Sphere* Object){
+Collision * create_collision(){
     Collision* collision;
     collision = (Collision *)malloc(sizeof(Collision));
 
-    collision->colPoint = colPoint;
-    collision->colObject = Object;
+    vector3D* vector = create_vector3D(0, 0, 0); //eu preciso fazer isso?
+    collision->colPoint = *vector;
+    free(vector);
+
+    collision->colObject = NULL;
 
     return collision;
 }
-/*void destroy_collision(Collision* col){
-    
-    free(col->colPoint);
-    destroy_sphere(col->colObject);
+void update_collision(Collision* col, vector3D colPoint, Sphere* object){
+
+    col->colObject = object;
+    col->colPoint = colPoint;
 
     return;
-}*/
+}
+//não destrói a esfera
+void destroy_collision(Collision* col){
+
+    free(col);
+    return;
+}
 
 ObjectList* create_objectlist(){
     ObjectList* list;
     list = (ObjectList *)malloc(sizeof(ObjectList));
 
-    list = NULL;
+    list->sphere = NULL;
+    list->next = NULL;
 
     return list;
 }
@@ -204,12 +218,16 @@ ObjectList* add_to_objectlist(ObjectList * list, Sphere * sphere){
     return new;
 }
 void destroy_objectlist(ObjectList* list){
-    if(list == NULL) return;    
-    
-    destroy_objectlist(list->next);
-    destroy_sphere(list->sphere);
-    free(list->next);
+    while (list != NULL){
+        ObjectList *temp = list;
+        list = list->next;
 
+        if (temp->sphere != NULL){
+            destroy_sphere(temp->sphere);
+        }
+
+        free(temp);
+    }
     return;
 }
 
@@ -217,7 +235,8 @@ LightList* create_lightlist(){
     LightList* list;
     list = (LightList *)malloc(sizeof(LightList));
 
-    list = NULL;
+    list->light = NULL;
+    list->next = NULL;
 
     return list;
 }
@@ -231,12 +250,16 @@ LightList* add_to_lightlist(LightList * list, Light * light){
     return new;
 }
 void destroy_lightlist(LightList* list){
-    if(list == NULL) return;    
-    
-    destroy_lightlist(list->next);
-    destroy_light(list->light);
-    free(list->next);
+    while (list != NULL) {
+        LightList *temp = list;
+        list = list->next;
 
+        if (temp->light != NULL) {
+            destroy_light(temp->light);
+        }
+
+        free(temp);
+    }
     return;
 }
 
@@ -273,6 +296,12 @@ float clamp(float num, float min, float max){//https://stackoverflow.com/questio
 vector3D * addVectors(vector3D * v1, vector3D * v2){
     vector3D * vector = create_vector3D(v1->x + v2->x, v1->y + v2->y, v1->z + v2->z);
     return vector;
+}
+void addVectors2(vector3D * v1, float x, float y, float z){
+    v1->x = v1->x+x;
+    v1->y = v1->y+y;
+    v1->z = v1->z+z;
+    return;
 }
 //v2 - v1
 vector3D * subtractVectors(vector3D * v1, vector3D * v2){
