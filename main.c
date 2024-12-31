@@ -21,10 +21,10 @@ float quadraticFormula(float a, float b, float c){
 //retorna cor da colisão ou NULL;
 Collision* checkRayCollisions(vector3D * dir, vector3D * origin, ObjectList * scene){
     float t = INFINITY;
-    Collision* collision = NULL;
+    Collision* collision = create_collision();
     
     ObjectList* index = scene;
-    while(index != NULL){
+    while(index->sphere != NULL){
         vector3D * oc = subtractVectors(index->sphere->center, origin);
         float a = dotProduct(dir, dir);
         float b = 2*dotProduct(oc, dir);
@@ -36,7 +36,9 @@ Collision* checkRayCollisions(vector3D * dir, vector3D * origin, ObjectList * sc
             t = temp;
             vector3D* scale = scaleVector(dir, t);
             vector3D* sumn = addVectors(origin, scale);
-            collision = create_collision(sumn, index->sphere);
+            update_collision(collision, *sumn, index->sphere);
+            free(scale);
+            free(sumn);
         }
         
         index = index->next;
@@ -57,18 +59,20 @@ float checkSingleObjectCollisionDistance(vector3D * dir, vector3D * origin, Sphe
 
 int isInShadow(Collision* col, Light* light, ObjectList* scene){
     ObjectList* index = scene;
-    while(index != NULL){
+    while(index->sphere != NULL){
         if(index->sphere == col->colObject){
             index = index->next;
             continue;
         }
-        vector3D* sub = subtractVectors(col->colPoint, light->position);
-        float t = checkSingleObjectCollisionDistance(sub, col->colPoint, index->sphere);
+
+        vector3D* sub = subtractVectors(&col->colPoint, light->position);
+        float t = checkSingleObjectCollisionDistance(sub, &col->colPoint, index->sphere);
+        free(sub);
+
         if(0 < t && t < 1){
             return 1;
         }
 
-        free(sub);
         index = index->next;
     }
     return 0;
@@ -77,21 +81,21 @@ int isInShadow(Collision* col, Light* light, ObjectList* scene){
 Color* checkCollisionColor(Collision* col, Color* ALI, vector3D* camera, LightList* lights, ObjectList* scene){
     Color * drawn_color = create_color(0, 0, 0);
 
-    vector3D* sub = subtractVectors(col->colObject->center, col->colPoint);
+    vector3D* sub = subtractVectors(col->colObject->center, &col->colPoint);
     vector3D* normalized = normalizeVector(sub);
     free(sub);
 
     vector3D* normCam = normalizeVector(camera);
-    vector3D* view = subtractVectors(col->colPoint , normCam);
+    vector3D* view = subtractVectors(&col->colPoint , normCam);
     free(normCam);
 
     LightList* index = lights; //creio que não é pra dar free nesse index
-    while(index != NULL){
+    while(index->light != NULL){
         if(isInShadow(col, index->light, scene)){
             index = index->next;
             continue;
         }
-        vector3D* sub = subtractVectors(col->colPoint, index->light->position);
+        vector3D* sub = subtractVectors(&col->colPoint, index->light->position);
         vector3D* L = normalizeVector(sub);
         free(sub);
 
@@ -102,6 +106,9 @@ Color* checkCollisionColor(Collision* col, Color* ALI, vector3D* camera, LightLi
         free(scaled);
 
         float dot2 = dotProduct(reflectance, view);
+        free(L);
+        free(reflectance);
+
         if(dot < 0){
             index = index->next;
             continue;
@@ -125,9 +132,6 @@ Color* checkCollisionColor(Collision* col, Color* ALI, vector3D* camera, LightLi
         free(specScale);
         free(specResult);
 
-        free(L);
-        free(reflectance);
-        
         index = index->next;
     }
 
@@ -179,35 +183,40 @@ void renderScene(SDL_Renderer* renderer, Scene* scene){
 
             //255-(x+2)*(255/4)) = 255 - (63,75*x+127,5)  //convertendo posição pra cor
             //255-(y+3*(255/6)) = 255 - (42,5*y+127,5)
-            //SDL_SetRenderDrawColor(renderer, 255-(63.75*direction->x+127.5), 255-(42.5*direction->y+127.5), 125, 255);
+            SDL_SetRenderDrawColor(renderer, 255-(63.75*direction->x+127.5), 255-(42.5*direction->y+127.5), 125, 255);
 
             Collision* collision = checkRayCollisions(direction, origin, scene->objects);
             //if(collision != NULL && collision->colPoint->y == 0)
                 //printf("colpoint: x: %f y: %f z: %f    esfera: raio: %f\n", collision->colPoint->x, collision->colPoint->y, collision->colPoint->z, collision->colObject->radius);
-            if(collision == NULL){
+            if(collision->colObject == NULL){
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             }else{
                 Color* renderedColor = checkCollisionColor(collision, scene->ALI, scene->camera, scene->lights, scene->objects);
                 SDL_SetRenderDrawColor(renderer, (int)(renderedColor->red*255), (int)(renderedColor->green*255), (int)(renderedColor->blue*255), 255);
                 free(renderedColor);
             }
-            //destroy_collision(collision);
+            destroy_collision(collision);
 
             SDL_RenderDrawPoint(renderer, x, HEIGHT-y);
 
             free(origin);
             free(direction);
-            //free(collision->colPoint); como eu destruo isso? eu devo destruir isso?
-            free(collision);
         }
     }
+}
+
+void processPhysics(Scene* scene){
+
+    addVectors2(scene->objects->sphere->center, -0.5, 0, -1);
+
+    return;
 }
 
 int main(){
     vector3D* camera = create_vector3D(0, 0, -1);
     plane3D* plane = create_plane3D(1, 0.66);
     Color* ALI = create_color(0.5, 0.5, 0.5); //ambient light intensity
-    ObjectList* objects = create_objectlist(); //esse ponteiro e o de baixo tão sendo perdidos
+    ObjectList* objects = create_objectlist();
     LightList* lights = create_lightlist();
 
     Color* light1diff = create_color(0.5, 0.5, 0.5);
@@ -242,34 +251,26 @@ int main(){
         return 1;
     }
 
-    renderScene(renderer, scene); // meu deus que chatice isso aqui
-    destroy_scene(scene);
-    //destroy_light(light1);
-    //destroy_light(light2);
-    free(light1diff);
-    free(light2diff);
-    free(light1spec);
-    free(light2spec);
-    /*destroy_sphere(sphere1);
-    destroy_sphere(sphere2);
-    destroy_sphere(sphere3);
-    destroy_sphere(sphere4);*/
-    SDL_RenderPresent(renderer);
+    //renderScene(renderer, scene);
+    //destroy_scene(scene);
 
-    /*while (1) { isso tá crashando cuidado / this crashes be careful
+    int running = 1;
+    while (running) {
+        //O programa pega instantaneamente 100% de um núcleo da CPU, não sei se isso é normal ou não
         SDL_Event e;
-        if (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT) {
-                break;
+        while(SDL_PollEvent(&e)){
+            if (e.type == SDL_QUIT){
+                running = 0;
             }
         }
-
+        
+        processPhysics(scene);
         renderScene(renderer, scene);
         SDL_RenderPresent(renderer);
-    }*/
-    SDL_Delay(5000);
+    }
 
     printf("exiting\n");
+    destroy_scene(scene);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
