@@ -58,9 +58,13 @@ typedef struct LightList{
     struct LightList* next;
 } LightList;
 
-/*typedef struct Scene{//posso colocar a camera e o plano aqui mas por enquanto não
-
-} Scene;*/
+typedef struct Scene{
+    vector3D* camera;
+    plane3D* plane;
+    Color* ALI;
+    LightList* lights;
+    ObjectList* objects;
+} Scene;
 
 vector3D * create_vector3D(float x, float y, float z){
     vector3D * vector;
@@ -84,6 +88,16 @@ plane3D * create_plane3D(float w, float h){
 
     return plane;
 }
+void destroy_plane(plane3D* plane){
+
+    free(plane->x1);
+    free(plane->x2);
+    free(plane->x3);
+    free(plane->x4);
+
+    free(plane);
+    return;
+}
 
 Color* create_color(float red, float green, float blue){
     Color* color;
@@ -106,6 +120,13 @@ Light * create_light(float x, float y, float z, Color* diffuse, Color* specular)
 
     return light;
 }
+void destroy_light(Light* light){
+
+    free(light->position);
+
+    free(light);
+    return;
+}
 
 Material * create_material(float ambient, float diffuse, float specular, float albedo){
     Material* material;
@@ -118,15 +139,13 @@ Material * create_material(float ambient, float diffuse, float specular, float a
 
     return material;
 }
+void destroy_material(Material* material){
 
-Collision * create_collision(vector3D* colPoint, Sphere* Object){
-    Collision* collision;
-    collision = (Collision *)malloc(sizeof(Collision));
+    free(material->ambient);
+    free(material->diffuse);
+    free(material->specular);
 
-    collision->colPoint = colPoint;
-    collision->colObject = Object;
-
-    return collision;
+    return;
 }
 
 //colors: [0,1]
@@ -141,6 +160,31 @@ Sphere * create_sphere(float x, float y, float z, float radius, float red, float
 
     return sphere;
 }
+void destroy_sphere(Sphere* sphere){
+
+    free(sphere->center);
+    free(sphere->color);
+    destroy_material(sphere->material);
+
+    return;
+}
+
+Collision * create_collision(vector3D* colPoint, Sphere* Object){
+    Collision* collision;
+    collision = (Collision *)malloc(sizeof(Collision));
+
+    collision->colPoint = colPoint;
+    collision->colObject = Object;
+
+    return collision;
+}
+/*void destroy_collision(Collision* col){
+    
+    free(col->colPoint);
+    destroy_sphere(col->colObject);
+
+    return;
+}*/
 
 ObjectList* create_objectlist(){
     ObjectList* list;
@@ -159,6 +203,15 @@ ObjectList* add_to_objectlist(ObjectList * list, Sphere * sphere){
 
     return new;
 }
+void destroy_objectlist(ObjectList* list){
+    if(list == NULL) return;    
+    
+    destroy_objectlist(list->next);
+    destroy_sphere(list->sphere);
+    free(list->next);
+
+    return;
+}
 
 LightList* create_lightlist(){
     LightList* list;
@@ -176,6 +229,39 @@ LightList* add_to_lightlist(LightList * list, Light * light){
     new->light = light;
 
     return new;
+}
+void destroy_lightlist(LightList* list){
+    if(list == NULL) return;    
+    
+    destroy_lightlist(list->next);
+    destroy_light(list->light);
+    free(list->next);
+
+    return;
+}
+
+Scene* create_scene(vector3D* camera, plane3D* plane, Color* ALI, LightList* lights, ObjectList* objects){
+    Scene* scene;
+    scene = (Scene*)malloc(sizeof(Scene));
+
+    scene->camera = camera;
+    scene->plane = plane;
+    scene->ALI = ALI;
+    scene->lights = lights;
+    scene->objects = objects;
+
+    return scene;
+}
+void destroy_scene(Scene* scene){
+
+    free(scene->ALI);
+    free(scene->camera);
+    destroy_lightlist(scene->lights);
+    destroy_objectlist(scene->objects);
+    destroy_plane(scene->plane);
+    
+    free(scene);
+    return;
 }
 
 float clamp(float num, float min, float max){//https://stackoverflow.com/questions/427477/fastest-way-to-clamp-a-real-fixed-floating-point-value
@@ -206,10 +292,16 @@ float getMagnitude(vector3D * v){
 }
 vector3D* normalizeVector(vector3D * v){
     vector3D * vector = scaleVector(v, 1/getMagnitude(v));
+    return vector;
 }
 
-Color* addColors(Color* c1, Color* c2){
-    return create_color(c1->red+c2->red, c1->green+c2->green, c1->blue+c2->blue);
+void addColors(Color* c1, Color* c2){
+
+    c1->red = c1->red+c2->red;
+    c1->green = c1->green+c2->green;
+    c1->blue = c1->blue+c2->blue;
+
+    return;
 }
 Color* productColors(Color* c1, Color* c2){
     return create_color(c1->red*c2->red, c1->green*c2->green, c1->blue*c2->blue);
