@@ -32,7 +32,15 @@ Collision* checkRayCollisions(vector3D * dir, vector3D * origin, ObjectList * ob
         free(oc);
 
         float temp = quadraticFormula(a, b, c);
-        if(temp >= 1 && temp < t){
+        /*
+            there is a bug in the reflexion that ocurs when two objects are pretty close to each other,
+            it is originated from this line bellow, it ignores collisions too close to the origin, something
+            that makes sense for rays originated from the camera but not for rays originated from other objects.
+            The problem is that changing this to temp > 0 causes a lot of dots and artifacts to appear
+            dont really understand why but need to take a look at this. 
+            There is the chance that it is a perspective thing too, i need to test it.
+        */
+        if(temp >= 1 && temp < t){ 
             t = temp;
             vector3D* scale = scaleVector(dir, t);
             vector3D* sumn = addVectors(origin, scale);
@@ -195,10 +203,78 @@ Color* colorFromRecursiveRayCast(vector3D * dir, vector3D * origin, Scene* scene
     return final_color;
 }
 
+Color* antialliased(Scene* scene, int x, int y){
+    Color* base_color = create_color(0, 0, 0);
+    int index = 0;
+    while(index < 4){
+        float alpha;
+        float beta;
+        switch (index)
+        {
+        case 0:
+            alpha = (float)x/WIDTH;
+            beta = (float)y/HEIGHT;
+            break;
+        case 1:
+            alpha = ((float)x + 0.5)/WIDTH;
+            beta = (float)y/HEIGHT;
+            break;
+        case 2:
+            alpha = (float)x/WIDTH;
+            beta = ((float)y + 0.5)/HEIGHT;
+            break;
+        default:
+            alpha = ((float)x + 0.5)/WIDTH;
+            beta = ((float)y + 0.5)/HEIGHT;
+            break;
+        }
+
+        //(1-alpha)*x1 + alpha*x2
+        vector3D* scalex1 = scaleVector(scene->plane->x1, 1.0-alpha);
+        vector3D* scalex2 = scaleVector(scene->plane->x2, alpha);
+        vector3D * t = addVectors(scalex1, scalex2);
+        free(scalex1);
+        free(scalex2);
+
+        vector3D* scalex3 = scaleVector(scene->plane->x3, 1.0-alpha);
+        vector3D* scalex4 = scaleVector(scene->plane->x4, alpha);
+        vector3D * b = addVectors(scalex3, scalex4);
+        free(scalex3);
+        free(scalex4);
+
+        vector3D* scalet = scaleVector(t, 1.0-beta);
+        vector3D* scaleb = scaleVector(b, beta);
+        vector3D * origin = addVectors(scalet, scaleb);
+        free(scalet);
+        free(scaleb);
+
+        free(t);
+        free(b);
+
+        vector3D * direction = subtractVectors(scene->camera, origin);
+
+        Color* renderedColor = colorFromRecursiveRayCast(direction, origin, scene, 3);
+        addColors(base_color, renderedColor);
+        free(origin);
+        free(direction);
+        free(renderedColor);
+
+        index+=1;
+    }
+
+    Color* averageColor = scaleColor(base_color, (float)1/4);
+    Color* finalColor = clampColor(averageColor, 0, 1);
+    free(base_color);
+    free(averageColor);
+
+    return finalColor;
+}
+
 void renderScene(SDL_Renderer* renderer, Scene* scene){
     for(int x = 0; x < WIDTH; x++){
         for(int y = 0; y < HEIGHT; y++){
-            float alpha = (float)x/WIDTH;
+            //Tire os comentários para usar sem anti-alliasing e comente se for usar
+            /*float alpha = (float)x/WIDTH;
             float beta = (float)y/HEIGHT;
 
             //(1-alpha)*x1 + alpha*x2
@@ -223,7 +299,7 @@ void renderScene(SDL_Renderer* renderer, Scene* scene){
             free(t);
             free(b);
 
-            vector3D * direction = subtractVectors(scene->camera, origin);
+            vector3D * direction = subtractVectors(scene->camera, origin);*/
 
             //Versão não recursiva, sem reflexos
             /*Collision* collision = checkRayCollisions(direction, origin, scene->objects); 
@@ -237,21 +313,19 @@ void renderScene(SDL_Renderer* renderer, Scene* scene){
             }
             destroy_collision(collision);*/
 
-            Color* renderedColor = colorFromRecursiveRayCast(direction, origin, scene, 3);
+            //Color* renderedColor = colorFromRecursiveRayCast(direction, origin, scene, 3); //sem anti-alliasing
+            Color* renderedColor = antialliased(scene, x, y);
             SDL_SetRenderDrawColor(renderer, (int)(renderedColor->red*255), (int)(renderedColor->green*255), (int)(renderedColor->blue*255), 255);
             free(renderedColor);
 
             SDL_RenderDrawPoint(renderer, x, HEIGHT-y);
-
-            free(origin);
-            free(direction);
         }
     }
 }
 
 void tick_physics(Scene* scene){
 
-    addVectors2(scene->objects->sphere->center, -0.5, 0, -1);
+    addVectors2(scene->objects->sphere->center, 0, 0.3, -1);
 
     return;
 }
