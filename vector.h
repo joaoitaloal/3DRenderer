@@ -33,6 +33,7 @@ typedef struct Material{
     Color* ambient;
     Color* diffuse;
     Color* specular;
+    Color* reflectivity;
     float albedo;
 } Material;
 
@@ -130,13 +131,14 @@ void destroy_light(Light* light){
     return;
 }
 
-Material * create_material(float ambient, float diffuse, float specular, float albedo){
+Material * create_material(float ambient, float diffuse, float specular, float reflectivity,float albedo){
     Material* material;
     material = (Material *)malloc(sizeof(Material));
 
     material->ambient = create_color(ambient, ambient, ambient);
     material->diffuse = create_color(diffuse, diffuse, diffuse);
     material->specular = create_color(specular, specular, specular);
+    material->reflectivity = create_color(reflectivity, reflectivity, reflectivity);
     material->albedo = albedo;
 
     return material;
@@ -146,6 +148,7 @@ void destroy_material(Material* material){
     free(material->ambient);
     free(material->diffuse);
     free(material->specular);
+    free(material->reflectivity);
 
     free(material);
     return;
@@ -324,7 +327,9 @@ vector3D* normalizeVector(vector3D * v){
     return vector;
 }
 
+//Se um dos ponteiros for NULL não faz nada
 void addColors(Color* c1, Color* c2){
+    if(c1 == NULL || c2 == NULL) return;
 
     c1->red = c1->red+c2->red;
     c1->green = c1->green+c2->green;
