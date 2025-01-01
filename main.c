@@ -18,12 +18,12 @@ float quadraticFormula(float a, float b, float c){
     else return fmin(t1,t2);
 }
 
-//retorna cor da colisão ou NULL;
-Collision* checkRayCollisions(vector3D * dir, vector3D * origin, ObjectList * scene){
+//Se não houver colisão retorna uma estrutura com colObject vazio
+Collision* checkRayCollisions(vector3D * dir, vector3D * origin, ObjectList * objects){
     float t = INFINITY;
     Collision* collision = create_collision();
     
-    ObjectList* index = scene;
+    ObjectList* index = objects;
     while(index->sphere != NULL){
         vector3D * oc = subtractVectors(index->sphere->center, origin);
         float a = dotProduct(dir, dir);
@@ -57,8 +57,8 @@ float checkSingleObjectCollisionDistance(vector3D * dir, vector3D * origin, Sphe
         return quadraticFormula(a, b, c);
 }
 
-int isInShadow(Collision* col, Light* light, ObjectList* scene){
-    ObjectList* index = scene;
+int isInShadow(Collision* col, Light* light, ObjectList* objects){
+    ObjectList* index = objects;
     while(index->sphere != NULL){
         if(index->sphere == col->colObject){
             index = index->next;
@@ -78,20 +78,20 @@ int isInShadow(Collision* col, Light* light, ObjectList* scene){
     return 0;
 }
 
-Color* checkCollisionColor(Collision* col, Color* ALI, vector3D* camera, LightList* lights, ObjectList* scene){
+Color* checkCollisionColor(Collision* col, Scene* scene){
     Color * drawn_color = create_color(0, 0, 0);
 
     vector3D* sub = subtractVectors(col->colObject->center, &col->colPoint);
     vector3D* normalized = normalizeVector(sub);
     free(sub);
 
-    vector3D* normCam = normalizeVector(camera);
+    vector3D* normCam = normalizeVector(scene->camera);
     vector3D* view = subtractVectors(&col->colPoint , normCam);
     free(normCam);
 
-    LightList* index = lights; //creio que não é pra dar free nesse index
+    LightList* index = scene->lights; //creio que não é pra dar free nesse index
     while(index->light != NULL){
-        if(isInShadow(col, index->light, scene)){
+        if(isInShadow(col, index->light, scene->objects)){
             index = index->next;
             continue;
         }
@@ -135,7 +135,7 @@ Color* checkCollisionColor(Collision* col, Color* ALI, vector3D* camera, LightLi
         index = index->next;
     }
 
-    Color* ambProd = productColors(col->colObject->material->ambient, ALI);
+    Color* ambProd = productColors(col->colObject->material->ambient, scene->ALI);
     addColors(drawn_color, ambProd);
     free(ambProd);
 
@@ -149,6 +149,50 @@ Color* checkCollisionColor(Collision* col, Color* ALI, vector3D* camera, LightLi
     Color* result = clampColor(drawn_color, 0, 1);
     free(drawn_color);
     return result;
+}
+
+Color* colorFromRecursiveRayCast(vector3D * dir, vector3D * origin, Scene* scene, int depth){
+    Color* drawn_color = create_color(0, 0, 0);
+    if(depth <= 0) return drawn_color;
+
+    Collision* collision = checkRayCollisions(dir, origin, scene->objects);
+    if(collision->colObject == NULL){
+        destroy_collision(collision);
+
+        return drawn_color;
+    }
+    Color* colColor = checkCollisionColor(collision, scene);
+    Color* reflecScaled = scaleColor(collision->colObject->material->reflectivity, depth/2); //3 de depth hard coded basicamente, dá pra melhorar depois
+    Color* reflecColor = productColors(colColor, reflecScaled);
+    free(colColor);
+    free(reflecScaled);
+
+    addColors(drawn_color, reflecColor);
+    free(reflecColor);
+
+    vector3D* inverse = scaleVector(dir, -1);
+    vector3D* V = normalizeVector(inverse);
+    vector3D* sub = subtractVectors(collision->colObject->center, &collision->colPoint); //tá certo isso?
+    vector3D* N = normalizeVector(sub);
+    float dot = dotProduct(V, N);
+    vector3D* normalScaled = scaleVector(N, 2*dot);
+    vector3D* reflectance = subtractVectors(V, normalScaled);
+    free(inverse);
+    free(V);
+    free(sub);
+    free(N);
+    free(normalScaled);
+
+    Color* reflected = colorFromRecursiveRayCast(reflectance, &collision->colPoint, scene, depth-1);
+    addColors(drawn_color, reflected);
+    destroy_collision(collision);
+    free(reflected);
+    free(reflectance);
+
+    Color* final_color = clampColor(drawn_color, 0, 1);
+    free(drawn_color);
+
+    return final_color;
 }
 
 void renderScene(SDL_Renderer* renderer, Scene* scene){
@@ -181,21 +225,21 @@ void renderScene(SDL_Renderer* renderer, Scene* scene){
 
             vector3D * direction = subtractVectors(scene->camera, origin);
 
-            //255-(x+2)*(255/4)) = 255 - (63,75*x+127,5)  //convertendo posição pra cor
-            //255-(y+3*(255/6)) = 255 - (42,5*y+127,5)
-            SDL_SetRenderDrawColor(renderer, 255-(63.75*direction->x+127.5), 255-(42.5*direction->y+127.5), 125, 255);
+            //Versão não recursiva, sem reflexos
+            /*Collision* collision = checkRayCollisions(direction, origin, scene->objects); 
 
-            Collision* collision = checkRayCollisions(direction, origin, scene->objects);
-            //if(collision != NULL && collision->colPoint->y == 0)
-                //printf("colpoint: x: %f y: %f z: %f    esfera: raio: %f\n", collision->colPoint->x, collision->colPoint->y, collision->colPoint->z, collision->colObject->radius);
             if(collision->colObject == NULL){
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             }else{
-                Color* renderedColor = checkCollisionColor(collision, scene->ALI, scene->camera, scene->lights, scene->objects);
+                Color* renderedColor = checkCollisionColor(collision, scene);
                 SDL_SetRenderDrawColor(renderer, (int)(renderedColor->red*255), (int)(renderedColor->green*255), (int)(renderedColor->blue*255), 255);
                 free(renderedColor);
             }
-            destroy_collision(collision);
+            destroy_collision(collision);*/
+
+            Color* renderedColor = colorFromRecursiveRayCast(direction, origin, scene, 3);
+            SDL_SetRenderDrawColor(renderer, (int)(renderedColor->red*255), (int)(renderedColor->green*255), (int)(renderedColor->blue*255), 255);
+            free(renderedColor);
 
             SDL_RenderDrawPoint(renderer, x, HEIGHT-y);
 
@@ -205,7 +249,7 @@ void renderScene(SDL_Renderer* renderer, Scene* scene){
     }
 }
 
-void processPhysics(Scene* scene){
+void tick_physics(Scene* scene){
 
     addVectors2(scene->objects->sphere->center, -0.5, 0, -1);
 
@@ -230,10 +274,10 @@ int main(){
     lights = add_to_lightlist(lights, light1);
     lights = add_to_lightlist(lights, light2);
 
-    Sphere* sphere1 = create_sphere(0, 0, 30, 10, 1, 0, 1, create_material(0.4, 0.4, 0.1, 1));
-    Sphere* sphere2 = create_sphere(-5, 0, 5, 1, 0, 0.5, 1, create_material(0.4, 0.4, 0.1, 1));
-    Sphere* sphere3 = create_sphere(20, -20, 50, 3, 0.3, 0, 0.3, create_material(0.4, 0.4, 0.1, 1));
-    Sphere* sphere4 = create_sphere(15, 0, 40, 3, 1, 0, 0, create_material(0.4, 0.4, 0.1, 1));
+    Sphere* sphere1 = create_sphere(0, 0, 30, 10, 1, 0, 1, create_material(0.4, 0.4, 0.1, 1, 1));
+    Sphere* sphere2 = create_sphere(-5, 0, 5, 1, 0, 0.5, 1, create_material(0.4, 0.4, 0.1, 1, 1));
+    Sphere* sphere3 = create_sphere(20, -20, 50, 3, 0.3, 0, 0.3, create_material(0.4, 0.4, 0.1, 1, 1));
+    Sphere* sphere4 = create_sphere(15, 0, 40, 3, 1, 0, 0, create_material(0.4, 0.4, 0.1, 1, 1));
     objects = add_to_objectlist(objects, sphere1);
     objects = add_to_objectlist(objects, sphere2);
     objects = add_to_objectlist(objects, sphere3);
@@ -264,7 +308,7 @@ int main(){
             }
         }
         
-        processPhysics(scene);
+        tick_physics(scene);
         renderScene(renderer, scene);
         SDL_RenderPresent(renderer);
     }
