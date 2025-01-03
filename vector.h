@@ -121,6 +121,16 @@ Light * create_light(float x, float y, float z, Color* diffuse, Color* specular)
 
     return light;
 }
+Light * create_light2(vector3D* position, Color* diffuse, Color* specular){
+    Light* light;
+    light = (Light *)malloc(sizeof(Light));
+
+    light->position = position;
+    light->diffuse = diffuse;
+    light->specular = specular;
+
+    return light;
+}
 void destroy_light(Light* light){
 
     free(light->position);
@@ -131,7 +141,7 @@ void destroy_light(Light* light){
     return;
 }
 
-Material * create_material(float ambient, float diffuse, float specular, float reflectivity,float albedo){
+Material * create_material(float ambient, float diffuse, float specular, float reflectivity, float albedo){
     Material* material;
     material = (Material *)malloc(sizeof(Material));
 
@@ -162,6 +172,17 @@ Sphere * create_sphere(float x, float y, float z, float radius, float red, float
     sphere->center = create_vector3D(x, y, z);
     sphere->radius = radius;
     sphere->color = create_color(red, green, blue);
+    sphere->material = material;
+
+    return sphere;
+}
+Sphere * create_sphere2(vector3D* position, float radius, Color* color, Material* material){
+    Sphere* sphere;
+    sphere = (Sphere *)malloc(sizeof(Sphere));
+
+    sphere->center = position;
+    sphere->radius = radius;
+    sphere->color = color;
     sphere->material = material;
 
     return sphere;
@@ -327,7 +348,7 @@ vector3D* normalizeVector(vector3D * v){
     return vector;
 }
 
-//Se um dos ponteiros for NULL não faz nada
+//Soma só em c1, se um dos ponteiros for NULL não faz nada
 void addColors(Color* c1, Color* c2){
     if(c1 == NULL || c2 == NULL) return;
 

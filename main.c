@@ -1,7 +1,13 @@
+//gcc -o main main.c   -I/usr/local/include/SDL3 -I/usr/local/include/SDL3_image   -L/usr/local/lib -lSDL3 -lSDL3_image -lm -lcjson
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
-#include <SDL2/SDL.h>
+#include <string.h>
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
+#include <cjson/cJSON.h>
 #include "vector.h"
+#include "strutils.h"
 
 #define WIDTH 1080
 #define HEIGHT 720
@@ -270,57 +276,218 @@ Color* antialliased(Scene* scene, int x, int y){
     return finalColor;
 }
 
-void renderScene(SDL_Renderer* renderer, Scene* scene){
+void renderScene(SDL_Renderer* renderer, Scene* scene, int antialliasing){
     for(int x = 0; x < WIDTH; x++){
         for(int y = 0; y < HEIGHT; y++){
-            //Tire os comentários para usar sem anti-alliasing e comente se for usar
-            /*float alpha = (float)x/WIDTH;
-            float beta = (float)y/HEIGHT;
+            Color* renderedColor;
 
-            //(1-alpha)*x1 + alpha*x2
-            vector3D* scalex1 = scaleVector(scene->plane->x1, 1.0-alpha);
-            vector3D* scalex2 = scaleVector(scene->plane->x2, alpha);
-            vector3D * t = addVectors(scalex1, scalex2);
-            free(scalex1);
-            free(scalex2);
+            if(!antialliasing){
+                float alpha = (float)x/WIDTH;
+                float beta = (float)y/HEIGHT;
 
-            vector3D* scalex3 = scaleVector(scene->plane->x3, 1.0-alpha);
-            vector3D* scalex4 = scaleVector(scene->plane->x4, alpha);
-            vector3D * b = addVectors(scalex3, scalex4);
-            free(scalex3);
-            free(scalex4);
+                //(1-alpha)*x1 + alpha*x2
+                vector3D* scalex1 = scaleVector(scene->plane->x1, 1.0-alpha);
+                vector3D* scalex2 = scaleVector(scene->plane->x2, alpha);
+                vector3D * t = addVectors(scalex1, scalex2);
+                free(scalex1);
+                free(scalex2);
 
-            vector3D* scalet = scaleVector(t, 1.0-beta);
-            vector3D* scaleb = scaleVector(b, beta);
-            vector3D * origin = addVectors(scalet, scaleb);
-            free(scalet);
-            free(scaleb);
+                vector3D* scalex3 = scaleVector(scene->plane->x3, 1.0-alpha);
+                vector3D* scalex4 = scaleVector(scene->plane->x4, alpha);
+                vector3D * b = addVectors(scalex3, scalex4);
+                free(scalex3);
+                free(scalex4);
 
-            free(t);
-            free(b);
+                vector3D* scalet = scaleVector(t, 1.0-beta);
+                vector3D* scaleb = scaleVector(b, beta);
+                vector3D* origin = addVectors(scalet, scaleb);
+                free(scalet);
+                free(scaleb);
 
-            vector3D * direction = subtractVectors(scene->camera, origin);*/
+                free(t);
+                free(b);
 
-            //Versão não recursiva, sem reflexos
-            /*Collision* collision = checkRayCollisions(direction, origin, scene->objects); 
+                vector3D* direction = subtractVectors(scene->camera, origin);
 
-            if(collision->colObject == NULL){
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            }else{
-                Color* renderedColor = checkCollisionColor(collision, scene);
-                SDL_SetRenderDrawColor(renderer, (int)(renderedColor->red*255), (int)(renderedColor->green*255), (int)(renderedColor->blue*255), 255);
-                free(renderedColor);
+                renderedColor = colorFromRecursiveRayCast(direction, origin, scene, 3);
+
+                free(direction);
+                free(origin);
             }
-            destroy_collision(collision);*/
+            else renderedColor = antialliased(scene, x, y);
 
-            //Color* renderedColor = colorFromRecursiveRayCast(direction, origin, scene, 3); //sem anti-alliasing
-            Color* renderedColor = antialliased(scene, x, y);
             SDL_SetRenderDrawColor(renderer, (int)(renderedColor->red*255), (int)(renderedColor->green*255), (int)(renderedColor->blue*255), 255);
+
             free(renderedColor);
 
-            SDL_RenderDrawPoint(renderer, x, HEIGHT-y);
+            SDL_RenderPoint(renderer, x, HEIGHT-y);
         }
     }
+}
+
+float* parse_string(char* str, int size){
+    float* list = malloc(sizeof(float) * size);
+    char arg[100];
+    char** tokens = str_split(strcpy(arg, str), ',');
+
+    for(int i = 0; i < size; i++){
+        list[i] = atof(tokens[i]);
+        free(tokens[i]);
+    }
+    free(tokens);
+
+    return list;
+}
+
+Scene* load_scene(char* json_str){
+
+    
+    cJSON* json = cJSON_Parse(json_str);
+    free(json_str);
+
+    if(json == NULL){
+        printf("Error parsing json\n");
+        return NULL;
+    }
+
+    vector3D* camera;
+    plane3D* plane;
+    Color* ALI; //ambient light intensity
+    ObjectList* objects = create_objectlist();
+    LightList* lights = create_lightlist();
+
+    cJSON* index = json->child;
+    while(index != NULL){
+        if(!strcmp(index->string, "camera")){
+            float* values = parse_string(index->valuestring, 3);
+            camera = create_vector3D(values[0], values[1], values[2]);
+            free(values); // preciso fazer isso?
+        }
+        else if(!strcmp(index->string, "plane")){
+            float* values = parse_string(index->valuestring, 2);
+            plane = create_plane3D(values[0], values[1]);
+            free(values);
+        }
+        else if(!strcmp(index->string, "ambient_light_intensity")){
+            float* values = parse_string(index->valuestring, 1);
+            ALI = create_color(values[0], values[0], values[0]);
+            free(values);
+        }
+        else if(!strcmp(index->string, "objects")){
+            cJSON* objindex = index->child;
+            while(objindex != NULL){
+                vector3D* objpos;
+                float objradius;
+                Color* objcolor;
+                Material* objmat;
+
+                cJSON* objprop = objindex->child;
+                while(objprop != NULL){
+                    if(!strcmp(objprop->string, "position")){
+                        float* values = parse_string(objprop->valuestring, 3);
+                        objpos = create_vector3D(values[0], values[1], values[2]);
+                        free(values);
+                    }
+                    else if(!strcmp(objprop->string, "radius")){
+                        float* values = parse_string(objprop->valuestring, 1);
+                        objradius = values[0];
+                        free(values);
+                    }
+                    else if(!strcmp(objprop->string, "color_rgb")){
+                        float* values = parse_string(objprop->valuestring, 3);
+                        objcolor = create_color(values[0]/255, values[1]/255, values[2]/255);
+                        free(values);
+                    }
+                    else if(!strcmp(objprop->string, "material")){
+                        float ambient;
+                        float diffuse;
+                        float specular;
+                        float reflectivity;
+                        float albedo;
+                        
+                        cJSON* matprop = objprop->child;
+                        while(matprop != NULL){
+                            if(!strcmp(matprop->string, "ambient")){
+                                float* values = parse_string(matprop->valuestring, 1);
+                                ambient = values[0];
+                                free(values);
+                            }
+                            else if(!strcmp(matprop->string, "diffuse")){
+                                float* values = parse_string(matprop->valuestring, 1);
+                                diffuse = values[0];
+                                free(values);
+                            }
+                            else if(!strcmp(matprop->string, "specular")){
+                                float* values = parse_string(matprop->valuestring, 1);
+                                specular = values[0];
+                                free(values);
+                            }
+                            else if(!strcmp(matprop->string, "reflectivity")){
+                                float* values = parse_string(matprop->valuestring, 1);
+                                reflectivity = values[0];
+                                free(values);
+                            }
+                            else if(!strcmp(matprop->string, "albedo")){
+                                float* values = parse_string(matprop->valuestring, 1);
+                                albedo = values[0];
+                                free(values);
+                            }
+                            matprop = matprop->next;
+                        }
+                        objmat = create_material(ambient, diffuse, specular, reflectivity, albedo);
+                    }
+
+                    objprop = objprop->next;
+                }
+                Sphere* object = create_sphere2(objpos, objradius, objcolor, objmat);
+                objects = add_to_objectlist(objects, object);
+
+                objindex = objindex->next;
+            }
+        }
+        else if(!strcmp(index->string, "lights")){
+            cJSON* lightsindex = index->child;
+            while(lightsindex != NULL){
+                vector3D* lightpos;
+                Color* lightdiff;
+                Color* lightspec;
+
+                cJSON* lightprops = lightsindex->child;
+                while(lightprops != NULL){
+                    if(!strcmp(lightprops->string, "position")){
+                        float* values = parse_string(lightprops->valuestring, 3);
+                        lightpos = create_vector3D(values[0], values[1], values[2]);
+                        free(values);
+                    }
+                    if(!strcmp(lightprops->string, "diffuse")){
+                        float* values = parse_string(lightprops->valuestring, 1);
+                        lightdiff = create_color(values[0], values[0], values[0]);
+                        free(values);
+                    }
+                    if(!strcmp(lightprops->string, "specular")){
+                        float* values = parse_string(lightprops->valuestring, 1);
+                        lightspec = create_color(values[0], values[0], values[0]);
+                        free(values);
+                    }
+
+                    lightprops = lightprops->next;
+                }
+                Light* light = create_light2(lightpos, lightdiff, lightspec);
+                lights = add_to_lightlist(lights, light);
+
+                lightsindex = lightsindex->next;
+            } 
+        }
+
+        index = index->next;
+    }
+
+
+    cJSON_Delete(json);
+
+    Scene* scene = create_scene(camera, plane, ALI, lights, objects);
+
+    return scene;
 }
 
 void tick_physics(Scene* scene){
@@ -330,65 +497,102 @@ void tick_physics(Scene* scene){
     return;
 }
 
-int main(){
-    vector3D* camera = create_vector3D(0, 0, -1);
-    plane3D* plane = create_plane3D(1, 0.66);
-    Color* ALI = create_color(0.5, 0.5, 0.5); //ambient light intensity
-    ObjectList* objects = create_objectlist();
-    LightList* lights = create_lightlist();
+int main(int argc, char* argv[]){
+    // ./main {inputmode} {input} {runmode} ?{filename}
+    if(argc <= 1 || argc >= 7){
+        printf("Unexpected number of arguments\n"
+        "Pass 'live' as the first argument to see a simulation rendered live\n"
+        "Pass 'image' as the first argument and a name as the second to save a image of the render. WARNING: this will overwrite whatever file has that same name\n");
+        return 3;
+    }
 
-    Color* light1diff = create_color(0.5, 0.5, 0.5);
-    Color* light1spec = create_color(0.1, 0.1, 0.1);
-    Light* light1 = create_light(-10, 0, -20, light1diff, light1spec);
+    if(!SDL_Init(SDL_INIT_VIDEO)){
+        printf("Error starting SDL\n");
+        return 2;
+    }
 
-    Color* light2diff = create_color(0.2, 0.2, 0.2);
-    Color* light2spec = create_color(0.1, 0.1, 0.1);
-    Light* light2 = create_light(-20, 50, 10, light2diff, light2spec);
+    SDL_Window * window = SDL_CreateWindow("render", WIDTH, HEIGHT, 0);
+    SDL_Renderer * renderer = SDL_CreateRenderer(window, NULL);
 
-    lights = add_to_lightlist(lights, light1);
-    lights = add_to_lightlist(lights, light2);
-
-    Sphere* sphere1 = create_sphere(0, 0, 30, 10, 1, 0, 1, create_material(0.4, 0.4, 0.1, 1, 1));
-    Sphere* sphere2 = create_sphere(-5, 0, 5, 1, 0, 0.5, 1, create_material(0.4, 0.4, 0.1, 1, 1));
-    Sphere* sphere3 = create_sphere(20, -20, 50, 3, 0.3, 0, 0.3, create_material(0.4, 0.4, 0.1, 1, 1));
-    Sphere* sphere4 = create_sphere(15, 0, 40, 3, 1, 0, 0, create_material(0.4, 0.4, 0.1, 1, 1));
-    objects = add_to_objectlist(objects, sphere1);
-    objects = add_to_objectlist(objects, sphere2);
-    objects = add_to_objectlist(objects, sphere3);
-    objects = add_to_objectlist(objects, sphere4);
-
-    Scene* scene = create_scene(camera, plane, ALI, lights, objects);
-
-    SDL_Init(SDL_INIT_VIDEO);
-    atexit(SDL_Quit);
-
-    SDL_Window * window = SDL_CreateWindow("render", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, 0);
-    SDL_Renderer * renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if(!window || !renderer){
-        printf("erro inicializando");
+        printf("Error starting SDL\n");
+        return 2;
+    }
+    Scene* scene;
+
+    if(!strcmp(argv[1], "file")){
+        FILE *file = fopen(argv[2], "r");
+        if (file == NULL){
+            fprintf(stderr, "Could not open file\n");
+            return 1;
+        }
+
+        fseek(file, 0, SEEK_END);
+        long file_size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+
+        char *json_str = malloc(file_size + 1);
+        fread(json_str, 1, file_size, file);
+        json_str[file_size] = '\0';
+        scene = load_scene(json_str);
+
+        fclose(file);
+    }
+    else if(!strcmp(argv[1], "string")){//how do i make this work from the command line?
+        char* string;
+        strcpy(string, argv[2]);
+        string[strlen(string) - 1] = 0;
+        string = string+1;
+
+        scene = load_scene(string);
+    }else{
+        printf("Options:\n"
+        "'file' then provide a valid json file name or\n");
+        return 3;
+    }
+    if(scene == NULL){
+        fprintf(stderr, "Could not load scene\n");
         return 1;
     }
 
-    //renderScene(renderer, scene);
-    //destroy_scene(scene);
-
-    int running = 1;
-    while (running) {
-        //O programa pega instantaneamente 100% de um núcleo da CPU, não sei se isso é normal ou não
-        SDL_Event e;
-        while(SDL_PollEvent(&e)){
-            if (e.type == SDL_QUIT){
-                running = 0;
+    SDL_Surface* surface = NULL;
+    if(!strcmp(argv[3], "live")){
+        int antialliasing = 0;
+        if(argv[4] != NULL) antialliasing = 1;
+        int running = 1;
+        while (running) {
+            //O programa pega instantaneamente 100% de um núcleo da CPU, não sei se isso é normal ou não
+            SDL_Event e;
+            while(SDL_PollEvent(&e)){
+                if (e.type == SDL_EVENT_QUIT){
+                    running = 0;
+                }
             }
+            
+            tick_physics(scene);
+            renderScene(renderer, scene, antialliasing);
+
+            SDL_RenderPresent(renderer);
         }
-        
-        tick_physics(scene);
-        renderScene(renderer, scene);
+    }
+    else if(!strcmp(argv[3], "image")){
+        if(argv[4] == NULL){
+            printf("Provide the desired filename as the second argument\n");
+            return 1;
+        }
+
+        renderScene(renderer, scene, 1);
         SDL_RenderPresent(renderer);
+
+        surface = SDL_RenderReadPixels(renderer, NULL);
+        if(IMG_SaveJPG(surface, strcat(argv[4], ".jpeg"), 100)) printf("Image saved\n");
+        else printf("Error while saving the image\n");
+
+        SDL_Delay(1000); //delay só dar pra ver rapidinho a imagem antes de fechar
     }
 
-    printf("exiting\n");
     destroy_scene(scene);
+    SDL_DestroySurface(surface);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
