@@ -19,6 +19,7 @@ After you compile the program you can run it with the following arguments(in ord
 2. Input: The name of the JSON file.
 3. Mode: Either "image" to save the rendered scene as an JPEG image or "live" for a live frame rendering of the scene(it kinda supports moving objects but it is very slow, check the tick_physics function on main.c).
 4. Filename for image: If the third argument is image you will need to pass the desired filename to be saved as a JPEG, WARNING: it will overwrite any other jpeg with the same name.
+5. Antialliasing: If you pass nothing as the fifth argument it does not use the antialliasing and if you pass anything it uses. The only reason to not use it is if you want the live mode to render faster, it will probably run 4x faster without antialliasing. The image mode is always using antialliasing, you can change it in the code if you want to.
 
 As an example you if you run
 ```bash
