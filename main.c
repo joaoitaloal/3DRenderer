@@ -498,11 +498,10 @@ void tick_physics(Scene* scene){
 }
 
 int main(int argc, char* argv[]){
-    // ./main {inputmode} {input} {runmode} ?{filename}
+    // ./main {inputmode} {input} {runmode} ?{filename/antialliasing}
     if(argc <= 1 || argc >= 7){
         printf("Unexpected number of arguments\n"
-        "Pass 'live' as the first argument to see a simulation rendered live\n"
-        "Pass 'image' as the first argument and a name as the second to save a image of the render. WARNING: this will overwrite whatever file has that same name\n");
+        "Check the readme to see the usage\n");
         return 3;
     }
 
