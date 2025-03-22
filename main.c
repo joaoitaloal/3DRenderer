@@ -1,13 +1,17 @@
 //gcc -o main main.c   -I/usr/local/include/SDL3 -I/usr/local/include/SDL3_image   -L/usr/local/lib -lSDL3 -lSDL3_image -lm -lcjson
+/*
+gcc main.c -o main -I ./dependencies/SDL3-3.2.8/x86_64-w64-mingw32/include -I dependencies/OpenCLinstall/include -I ./dependencies/SDL3_image-3.2.4/x86_64-w64-mingw32/include -I ./dependencies/cjson/include -L ./dependencies/SDL3_image-3.2.4/x86_64-w64-mingw32/lib -L ./dependencies/SDL3-3.2.8/x86_64-w64-mingw32/lib -L ./dependencies/cjson/lib -L dependencies/OpenCLinstall/lib -lSDL3 -lSDL3_image -lcjson -lOpenCL -lm -Wall
+*/
+#define CL_TARGET_OPENCL_VERSION 300
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
-#include <cjson/cJSON.h>
+#include <CL/cl.h>
 #include "vector.h"
-#include "strutils.h"
+#include "utils.h"
 
 #define WIDTH 1080
 #define HEIGHT 720
@@ -325,180 +329,30 @@ void renderScene(SDL_Renderer* renderer, Scene* scene, int antialliasing){
     }
 }
 
-float* parse_string(char* str, int size){
-    float* list = malloc(sizeof(float) * size);
-    char arg[100];
-    char** tokens = str_split(strcpy(arg, str), ',');
-
-    for(int i = 0; i < size; i++){
-        list[i] = atof(tokens[i]);
-        free(tokens[i]);
-    }
-    free(tokens);
-
-    return list;
-}
-
-Scene* load_scene(char* json_str){
-
-    
-    cJSON* json = cJSON_Parse(json_str);
-    free(json_str);
-
-    if(json == NULL){
-        printf("Error parsing json\n");
-        return NULL;
-    }
-
-    vector3D* camera;
-    plane3D* plane;
-    Color* ALI; //ambient light intensity
-    ObjectList* objects = create_objectlist();
-    LightList* lights = create_lightlist();
-
-    cJSON* index = json->child;
-    while(index != NULL){
-        if(!strcmp(index->string, "camera")){
-            float* values = parse_string(index->valuestring, 3);
-            camera = create_vector3D(values[0], values[1], values[2]);
-            free(values); // preciso fazer isso?
-        }
-        else if(!strcmp(index->string, "plane")){
-            float* values = parse_string(index->valuestring, 2);
-            plane = create_plane3D(values[0], values[1]);
-            free(values);
-        }
-        else if(!strcmp(index->string, "ambient_light_intensity")){
-            float* values = parse_string(index->valuestring, 1);
-            ALI = create_color(values[0], values[0], values[0]);
-            free(values);
-        }
-        else if(!strcmp(index->string, "objects")){
-            cJSON* objindex = index->child;
-            while(objindex != NULL){
-                vector3D* objpos;
-                float objradius;
-                Color* objcolor;
-                Material* objmat;
-
-                cJSON* objprop = objindex->child;
-                while(objprop != NULL){
-                    if(!strcmp(objprop->string, "position")){
-                        float* values = parse_string(objprop->valuestring, 3);
-                        objpos = create_vector3D(values[0], values[1], values[2]);
-                        free(values);
-                    }
-                    else if(!strcmp(objprop->string, "radius")){
-                        float* values = parse_string(objprop->valuestring, 1);
-                        objradius = values[0];
-                        free(values);
-                    }
-                    else if(!strcmp(objprop->string, "color_rgb")){
-                        float* values = parse_string(objprop->valuestring, 3);
-                        objcolor = create_color(values[0]/255, values[1]/255, values[2]/255);
-                        free(values);
-                    }
-                    else if(!strcmp(objprop->string, "material")){
-                        float ambient;
-                        float diffuse;
-                        float specular;
-                        float reflectivity;
-                        float albedo;
-                        
-                        cJSON* matprop = objprop->child;
-                        while(matprop != NULL){
-                            if(!strcmp(matprop->string, "ambient")){
-                                float* values = parse_string(matprop->valuestring, 1);
-                                ambient = values[0];
-                                free(values);
-                            }
-                            else if(!strcmp(matprop->string, "diffuse")){
-                                float* values = parse_string(matprop->valuestring, 1);
-                                diffuse = values[0];
-                                free(values);
-                            }
-                            else if(!strcmp(matprop->string, "specular")){
-                                float* values = parse_string(matprop->valuestring, 1);
-                                specular = values[0];
-                                free(values);
-                            }
-                            else if(!strcmp(matprop->string, "reflectivity")){
-                                float* values = parse_string(matprop->valuestring, 1);
-                                reflectivity = values[0];
-                                free(values);
-                            }
-                            else if(!strcmp(matprop->string, "albedo")){
-                                float* values = parse_string(matprop->valuestring, 1);
-                                albedo = values[0];
-                                free(values);
-                            }
-                            matprop = matprop->next;
-                        }
-                        objmat = create_material(ambient, diffuse, specular, reflectivity, albedo);
-                    }
-
-                    objprop = objprop->next;
-                }
-                Sphere* object = create_sphere2(objpos, objradius, objcolor, objmat);
-                objects = add_to_objectlist(objects, object);
-
-                objindex = objindex->next;
-            }
-        }
-        else if(!strcmp(index->string, "lights")){
-            cJSON* lightsindex = index->child;
-            while(lightsindex != NULL){
-                vector3D* lightpos;
-                Color* lightdiff;
-                Color* lightspec;
-
-                cJSON* lightprops = lightsindex->child;
-                while(lightprops != NULL){
-                    if(!strcmp(lightprops->string, "position")){
-                        float* values = parse_string(lightprops->valuestring, 3);
-                        lightpos = create_vector3D(values[0], values[1], values[2]);
-                        free(values);
-                    }
-                    if(!strcmp(lightprops->string, "diffuse")){
-                        float* values = parse_string(lightprops->valuestring, 1);
-                        lightdiff = create_color(values[0], values[0], values[0]);
-                        free(values);
-                    }
-                    if(!strcmp(lightprops->string, "specular")){
-                        float* values = parse_string(lightprops->valuestring, 1);
-                        lightspec = create_color(values[0], values[0], values[0]);
-                        free(values);
-                    }
-
-                    lightprops = lightprops->next;
-                }
-                Light* light = create_light2(lightpos, lightdiff, lightspec);
-                lights = add_to_lightlist(lights, light);
-
-                lightsindex = lightsindex->next;
-            } 
-        }
-
-        index = index->next;
-    }
-
-
-    cJSON_Delete(json);
-
-    Scene* scene = create_scene(camera, plane, ALI, lights, objects);
-
-    return scene;
-}
-
 void tick_physics(Scene* scene){
 
     addVectors2(scene->objects->sphere->center, 0, 0.3, -1);
 
     return;
 }
-
+/*xy: float[2]*
+    x:1080, y: 720
+    x = floor(num/1080); y = num mod 1080;
+    0,0: 0+1080*0
+    1,0: 1+1080*0
+    2,0: 2+1080*0
+    3,0: 3+1080*0
+    ...
+    1079,0: 1079+1080*0
+    0,1: 0+1080*1
+    ...
+    3,5: 3+1080*5
+    ...
+    1079,719: 1079+1080*719
+*/
 int main(int argc, char* argv[]){
     // ./main {inputmode} {input} {runmode} ?{filename/antialliasing}
+
     if(argc <= 1 || argc >= 7){
         printf("Unexpected number of arguments\n"
         "Check the readme to see the usage\n");
@@ -522,7 +376,7 @@ int main(int argc, char* argv[]){
     if(!strcmp(argv[1], "file")){
         FILE *file = fopen(argv[2], "r");
         if (file == NULL){
-            fprintf(stderr, "Could not open file\n");
+            printf("Could not open file\n");
             return 1;
         }
 
@@ -538,7 +392,7 @@ int main(int argc, char* argv[]){
         fclose(file);
     }
     else if(!strcmp(argv[1], "string")){//how do i make this work from the command line?
-        char* string;
+        char* string = "";
         strcpy(string, argv[2]);
         string[strlen(string) - 1] = 0;
         string = string+1;
@@ -550,7 +404,7 @@ int main(int argc, char* argv[]){
         return 3;
     }
     if(scene == NULL){
-        fprintf(stderr, "Could not load scene\n");
+        printf("Could not load scene\n");
         return 1;
     }
 
@@ -560,7 +414,6 @@ int main(int argc, char* argv[]){
         if(argv[4] != NULL) antialliasing = 1;
         int running = 1;
         while (running) {
-            //O programa pega instantaneamente 100% de um núcleo da CPU, não sei se isso é normal ou não
             SDL_Event e;
             while(SDL_PollEvent(&e)){
                 if (e.type == SDL_EVENT_QUIT){
@@ -588,6 +441,218 @@ int main(int argc, char* argv[]){
         else printf("Error while saving the image\n");
 
         SDL_Delay(1000); //delay só dar pra ver rapidinho a imagem antes de fechar
+    }
+    else if(!strcmp(argv[3], "opencl")){
+        //iniciando opencl
+        cl_int err;
+        cl_platform_id plataforms;
+        cl_uint num_plataforms;
+        err = clGetPlatformIDs(1, &plataforms, &num_plataforms);
+        if(err != CL_SUCCESS){
+            printf("an error ocurred while finding available opencl plataforms");
+            exit(1);
+        }
+        cl_device_id devices;
+        cl_uint num_devices;
+        err = clGetDeviceIDs(plataforms, CL_DEVICE_TYPE_GPU, 1, &devices, &num_devices);
+        if(err != CL_SUCCESS){
+            printf("an error ocurred while finding available opencl devices");
+            exit(1);
+        }
+        printf("%d %d\n", num_plataforms, num_devices);
+        cl_context context = clCreateContext(NULL, 1, &devices, NULL, NULL, &err);
+        if(!context || err != CL_SUCCESS){
+            printf("An error ocurred while creating the context\n");
+            exit(1);
+        }
+
+        const char* kernel_source = load_strfile("render.txt");
+        /*const char* kernel_source = "__kernel void render(__global float pixelcolors[], const unsigned int screensize) {"
+            "const float WIDTH = 1080;"
+            "const float HEIGHT = 720;"
+            "int i = get_global_id(0);"
+            "float y = floor((float)(i/WIDTH));"
+            "float x = fmod(i, WIDTH);"
+            "if (i < screensize) {"
+            "    pixelcolors[i*3] = x/WIDTH;"
+            "    pixelcolors[(i*3)+1] = y/HEIGHT;"
+            "    pixelcolors[(i*3)+2] = 0.5;"
+            "}"
+        "}";*/
+        cl_program program = clCreateProgramWithSource(context, 1, &kernel_source, NULL, &err);
+        if(err != CL_SUCCESS){
+            printf("an error ocurred while creating the opencl program: %d\n", err);
+            exit(1);
+        }
+        err = clBuildProgram(program, 1, &devices, NULL, NULL, NULL);
+        if (err == CL_BUILD_PROGRAM_FAILURE) {
+            // Determine the size of the log
+            size_t log_size;
+            clGetProgramBuildInfo(program, devices, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+        
+            // Allocate memory for the log
+            char *log = (char *) malloc(log_size);
+        
+            // Get the log
+            clGetProgramBuildInfo(program, devices, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+        
+            // Print the log
+            printf("%s\n", log);
+            exit(1);
+        }
+
+        cl_command_queue queue = clCreateCommandQueueWithProperties(context, devices, NULL, NULL);
+        
+        const long screensize = WIDTH*HEIGHT;
+        const size_t screensizebytes = screensize*sizeof(float)*3;
+        cl_mem pixelcolors = clCreateBuffer(context, CL_MEM_READ_WRITE, screensizebytes, NULL, NULL);
+        /*
+            float camera[3];
+            float plane[12];
+            float ALI[3];
+            int num_lights;
+            int num_objects;
+            float* lightpos;
+            float* lightdiffuse;
+            float* lightspecular;
+            float* objectpos;
+            float* objectcolor;
+            float* objectambient;
+            float* objectdiffuse;
+            float* objectspecular;
+            float* objectreflectivity;
+            float* objectalbedo;
+            float* objectradius;
+        */
+    
+        /*cl_mem camera = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*3, NULL, NULL);
+        cl_mem plane = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*12, NULL, NULL);
+        cl_mem ALI = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*3, NULL, NULL);
+        cl_mem lightpos = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
+        cl_mem lightdiffuse = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
+        cl_mem lightspecular = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
+        cl_mem objectpos = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+        cl_mem objectcolor = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+        cl_mem objectambient = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+        cl_mem objectdiffuse = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+        cl_mem objectspecular = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+        cl_mem objectreflectivity = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+        cl_mem objectalbedo = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects, NULL, NULL);
+        cl_mem objectradius = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects, NULL, NULL);
+
+        flattenedScene* fscene = flattenScene(scene);
+        clEnqueueWriteBuffer(queue, camera, CL_TRUE, 0, sizeof(float)*3, fscene->camera, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, plane, CL_TRUE, 0, sizeof(float)*12, fscene->plane, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, ALI, CL_TRUE, 0, sizeof(float)*3, fscene->ALI, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, lightpos, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightpos, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, lightdiffuse, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightdiffuse, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, lightspecular, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightspecular, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, objectpos, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectpos, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, objectcolor, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectcolor, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, objectambient, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectambient, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, objectdiffuse, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectdiffuse, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, objectspecular, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectspecular, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, objectreflectivity, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectreflectivity, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, objectalbedo, CL_TRUE, 0, sizeof(float)*scene->num_objects, fscene->objectalbedo, 0, NULL, NULL);
+        clEnqueueWriteBuffer(queue, objectradius, CL_TRUE, 0, sizeof(float)*scene->num_objects, fscene->objectradius, 0, NULL, NULL);*/
+
+        cl_kernel kernel = clCreateKernel(program, "render", NULL);
+
+        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &pixelcolors);
+        if (err != CL_SUCCESS) {
+            printf("Error setting kernel arg: %d\n", err);
+            exit(1);
+        }
+        err = clSetKernelArg(kernel, 1, sizeof(long), &screensize);
+        if (err != CL_SUCCESS) {
+            printf("Error setting kernel arg: %d\n", err);
+            exit(1);
+        }
+        float cur_frame = 0;
+        err = clSetKernelArg(kernel, 2, sizeof(long), &cur_frame);
+        if (err != CL_SUCCESS) {
+            printf("Error setting kernel arg: %d\n", err);
+            exit(1);
+        }
+
+        size_t globalsize = screensize;
+        size_t localsize = 128;
+        err = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &globalsize, &localsize, 0, NULL, NULL);
+        if (err != CL_SUCCESS) {
+            printf("Error executing queued command: %d\n", err);
+            exit(1);
+        }
+        clFinish(queue);
+
+        float* pixels = (float*)malloc(screensizebytes);
+        err = clEnqueueReadBuffer(queue, pixelcolors, CL_TRUE, 0, screensizebytes, pixels, 0, NULL, NULL);
+        if (err != CL_SUCCESS) {
+            printf("Error reading queued buffer: %d\n", err);
+            exit(1);
+        }
+
+        int running = 1;
+        while (running) {
+            SDL_Event e;
+            while(SDL_PollEvent(&e)){
+                if (e.type == SDL_EVENT_QUIT){
+                    running = 0;
+                }
+            }
+            for(int i = 0; i < screensize; i++){
+                int y = floor(i/WIDTH);
+                int x = fmod(i, 1080);
+                //printf("%d %d %f %f %f", x, y, pixels[i*3]*255, pixels[(i*3)+1]*255, pixels[(i*3)+2]*255);
+                SDL_SetRenderDrawColor(renderer, pixels[i*3]*255, pixels[(i*3)+1]*255, pixels[(i*3)+2]*255, 255);
+                SDL_RenderPoint(renderer, x, HEIGHT-y);
+            }
+
+            SDL_RenderPresent(renderer);
+            
+            cur_frame+=0.01;
+            err = clSetKernelArg(kernel, 2, sizeof(float), &cur_frame);
+            if (err != CL_SUCCESS) {
+                printf("Error setting kernel arg: %d\n", err);
+                exit(1);
+            }
+
+            err = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &globalsize, &localsize, 0, NULL, NULL);
+            if (err != CL_SUCCESS) {
+                printf("Error executing queued command: %d\n", err);
+                exit(1);
+            }
+            clFinish(queue);
+    
+            err = clEnqueueReadBuffer(queue, pixelcolors, CL_TRUE, 0, screensizebytes, pixels, 0, NULL, NULL);
+            if (err != CL_SUCCESS) {
+                printf("Error reading queued buffer: %d\n", err);
+                exit(1);
+            }
+    
+        }
+
+        //SDL_RenderPresent(renderer);
+        //SDL_Delay(3000);
+
+        clReleaseMemObject(pixelcolors);
+        /*clReleaseMemObject(camera);
+        clReleaseMemObject(plane);
+        clReleaseMemObject(ALI);
+        clReleaseMemObject(lightpos);
+        clReleaseMemObject(lightdiffuse);
+        clReleaseMemObject(lightspecular);
+        clReleaseMemObject(objectpos);
+        clReleaseMemObject(objectcolor);
+        clReleaseMemObject(objectambient);
+        clReleaseMemObject(objectdiffuse);
+        clReleaseMemObject(objectspecular);
+        clReleaseMemObject(objectreflectivity);
+        clReleaseMemObject(objectalbedo);
+        clReleaseMemObject(objectradius);*/
+        clReleaseKernel(kernel);
+        clReleaseProgram(program);
+        clReleaseCommandQueue(queue);
+        clReleaseContext(context);
     }
 
     destroy_scene(scene);

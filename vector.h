@@ -65,7 +65,28 @@ typedef struct Scene{
     Color* ALI;
     LightList* lights;
     ObjectList* objects;
+    int num_lights;
+    int num_objects;
 } Scene;
+
+typedef struct flattenedScene{
+    float camera[3];
+    float plane[12];
+    float ALI[3];
+    int num_lights;
+    int num_objects;
+    float* lightpos;
+    float* lightdiffuse;
+    float* lightspecular;
+    float* objectpos;
+    float* objectradius;
+    float* objectcolor;
+    float* objectambient;
+    float* objectdiffuse;
+    float* objectspecular;
+    float* objectreflectivity;
+    float* objectalbedo;
+} flattenedScene;
 
 vector3D * create_vector3D(float x, float y, float z){
     vector3D * vector;
@@ -287,7 +308,7 @@ void destroy_lightlist(LightList* list){
     return;
 }
 
-Scene* create_scene(vector3D* camera, plane3D* plane, Color* ALI, LightList* lights, ObjectList* objects){
+Scene* create_scene(vector3D* camera, plane3D* plane, Color* ALI, LightList* lights, ObjectList* objects, int num_lights, int num_objects){
     Scene* scene;
     scene = (Scene*)malloc(sizeof(Scene));
 
@@ -296,6 +317,8 @@ Scene* create_scene(vector3D* camera, plane3D* plane, Color* ALI, LightList* lig
     scene->ALI = ALI;
     scene->lights = lights;
     scene->objects = objects;
+    scene->num_lights = num_lights;
+    scene->num_objects = num_objects;
 
     return scene;
 }

@@ -1,0 +1,18 @@
+__kernel void render(__global float pixelcolors[], const unsigned int screensize, float frame) {
+    const float WIDTH = 1080;
+    const float HEIGHT = 720;
+    int i = get_global_id(0);
+    float y = floor((float)(i/WIDTH));
+    float x = fmod(i, WIDTH);
+    if (i < screensize) {
+        float red = x/WIDTH+frame;
+        if(red > 1) red = fmod(red, 1);
+        pixelcolors[i*3] = red;
+        float green = y/HEIGHT+frame;
+        if(green > 1) green = fmod(green, 1);
+        pixelcolors[(i*3)+1] = green;
+        float blue = y/x;
+        if(blue > 1) blue = fmod(blue, 1);
+        pixelcolors[(i*3)+2] = blue;
+    }
+};
