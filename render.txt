@@ -1,18 +1,212 @@
-__kernel void render(__global float pixelcolors[], const unsigned int screensize, float frame) {
+
+typedef struct Collision{
+    float3 col_point;
+    int objectindex;
+} Collision;
+
+float quadraticFormula(float a, float b, float c){
+    float delta = b*b - 4*a*c;
+    if(delta < 0) return delta;
+    delta = sqrt(delta);
+
+    float t1 = (-b+delta)/(2*a);
+    float t2 = (-b-delta)/(2*a);
+
+    if(min(t1, t2) < 0) return max(t1, t2);
+    else return min(t1, t2);
+}
+
+Collision check_ray_collision(float3 dir, float3 origin, __global float objectradius[], __global float objectpos[], int num_objects){
+    float t = INFINITY;
+    Collision collision;
+    collision.objectindex = -1;
+
+    int i = 0;
+    while(i < num_objects){
+        float3 sphere_center = (float3)(objectpos[i*3], objectpos[i*3+1], objectpos[i*3+2]);
+        float3 oc = origin-sphere_center;
+        float a = dot(dir, dir);
+        float b = 2*dot(oc, dir);
+        float c = dot(oc, oc)-(objectradius[i]*objectradius[i]);
+
+        float temp = quadraticFormula(a, b, c);
+
+        if(temp >=1 && temp < t){
+            t = temp;
+            float3 scale = dir*t;
+            float3 sumn = origin+scale;
+            collision.col_point = sumn;
+            collision.objectindex = i;
+        }
+
+        i = i+1;
+    }
+
+    return collision;
+}
+
+float check_single_object_collision_distance(float3 dir, float3 origin,  __global float objectradius[], __global float objectpos[], int objectindex){
+    float3 sphere_center = (float3)(objectpos[objectindex*3], objectpos[objectindex*3+1], objectpos[objectindex*3+2]);
+    float3 oc = origin-sphere_center;
+    float a = dot(dir, dir);
+    float b = 2*dot(oc, dir);
+    float c = dot(oc, oc)-(objectradius[objectindex]*objectradius[objectindex]);
+
+    return quadraticFormula(a, b, c);
+}
+
+bool isInShadow(Collision col, __global float lightpos[],  __global float objectradius[], __global float objectpos[], int lightindex, int num_objects){
+    for(int i = 0; i < num_objects; i++){
+        if(i == col.objectindex) continue;
+
+        float3 light_position = (float3)(lightpos[lightindex*3], lightpos[lightindex*3+1], lightpos[lightindex*3+2]); 
+        float3 sub = light_position-col.col_point;
+        float t = check_single_object_collision_distance(sub, col.col_point, objectradius, objectpos, i);
+        
+        if(0 < t && t < 1){
+            return 1;
+        }
+    }
+    return 0;
+}
+
+float3 check_collision_color(Collision col, __global float ALI[], float3 cam, __global float lightpos[], __global float lightdiffuse[], __global float lightspecular[], __global float objectcolor[],__global float objectambient[], __global float objectradius[], __global float objectpos[], __global float objectdiffuse[], __global float objectspecular[], __global float objectalbedo[], int num_lights, int num_objects){
+    float3 drawn_color = (float3)(0, 0, 0);
+
+    float3 object_center = (float3)(objectpos[col.objectindex*3], objectpos[col.objectindex*3+1], objectpos[col.objectindex*3+2]);
+    float3 sub = col.col_point-object_center;
+    float3 normalized = normalize(sub);
+
+    float3 norm_cam = normalize(cam);
+    float3 view = norm_cam-col.col_point;
+
+    for(int i = 0; i < num_lights; i++){
+        if(isInShadow(col, lightpos, objectradius, objectpos, i, num_objects)) continue;
+
+        float3 light_position = (float3)(lightpos[i*3], lightpos[i*3+1], lightpos[i*3+2]);
+        float3 sub2 =  light_position-col.col_point;
+        float3 L = normalize(sub2);
+
+        float dotp = dot(L, normalized);
+
+        if(dotp < 0) continue;
+
+        float3 scaled = normalized*(2*dotp);
+        float3 reflectance = scaled-L;
+
+        float dotp2 = dot(reflectance, view);
+
+        float3 light_diff = (float3)(lightdiffuse[i*3], lightdiffuse[i*3+1], lightdiffuse[i*3+2]);
+        float3 obj_diff = (float3)(objectdiffuse[col.objectindex*3], objectdiffuse[col.objectindex*3+1], objectdiffuse[col.objectindex*3+2]);
+        float3 diffuse_prod = light_diff*obj_diff;
+        float3 diffuse_scale = diffuse_prod*dotp;
+        float3 diffuse_result = clamp(diffuse_scale, 0, 1);
+        drawn_color = drawn_color+diffuse_result;
+
+        dotp2 = pow(dotp2, objectalbedo[col.objectindex]);
+
+        float3 light_spec = (float3)(lightspecular[i*3], lightspecular[i*3+1], lightspecular[i*3+2]);
+        float3 obj_spec = (float3)(objectspecular[col.objectindex*3], objectspecular[col.objectindex*3+1], objectspecular[col.objectindex*3+2]);
+        float3 spec_prod = light_spec*obj_spec;
+        float3 spec_scale = spec_prod*dotp2;
+        float3 spec_result = clamp(spec_scale, 0, 1);
+        drawn_color = drawn_color+spec_result;
+    }
+
+    float3 obj_amb = (float3)(objectambient[col.objectindex*3], objectambient[col.objectindex*3+1], objectambient[col.objectindex*3+2]);
+    float3 ALI_color = (float3)(ALI[0], ALI[1], ALI[2]);
+    float3 amb_prod = obj_amb*ALI_color;
+    drawn_color = drawn_color+amb_prod;
+
+    float3 obj_color = (float3)(objectcolor[col.objectindex*3], objectcolor[col.objectindex*3+1], objectcolor[col.objectindex*3+2]);
+    float3 hue_scale = obj_color*0.2f;
+    drawn_color = drawn_color+hue_scale;
+
+    return clamp(drawn_color, 0, 1);
+}
+
+float3 get_origin(__global float plane[], float x, float y, const float WIDTH, const float HEIGHT){
+    float3 planep1 = (float3)(plane[0], plane[1], plane[2]);
+    float3 planep2 = (float3)(plane[3], plane[4], plane[5]); 
+    float3 planep3 = (float3)(plane[6], plane[7], plane[8]); 
+    float3 planep4 = (float3)(plane[9], plane[10], plane[11]);   
+
+    float alpha = (float)x/WIDTH;
+    float beta = (float)y/HEIGHT;
+
+    float3 scalex1 = planep1*(1-alpha);
+    float3 scalex2 = planep2*alpha;
+    float3 t = scalex1+scalex2;
+
+    float3 scalex3 = planep3*(1-alpha);
+    float3 scalex4 = planep4*alpha;
+    float3 b = scalex3+scalex4;
+
+    float3 scalet = t*(1-beta);
+    float3 scaleb = b*beta;
+    float3 origin = scalet+scaleb;
+
+    return origin;
+}
+
+/*
+    im basically just adapting the functions from the original c code here,
+    if everything works fine i'll come back and make the vector calculations code less verbose
+*/
+__kernel void render(__global float pixelcolors[], const unsigned int screensize, float frame,
+ __global float camera[], __global float plane[], __global float ALI[], __global float lightpos[], __global float lightdiffuse[],
+ __global float lightspecular[], __global float objectpos[], __global float objectcolor[], __global float objectambient[],
+ __global float objectdiffuse[], __global float objectspecular[], __global float objectreflectivity[],
+ __global float objectalbedo[], __global float objectradius[], int num_lights, int num_objects) {
+    int i = get_global_id(0);
+    if (i > screensize) return;
+
+    /*plane[2]-=frame/10;
+    plane[5]+=frame/10;
+    plane[8]-=frame/10;
+    plane[11]+=frame/10;*/
+
     const float WIDTH = 1080;
     const float HEIGHT = 720;
-    int i = get_global_id(0);
     float y = floor((float)(i/WIDTH));
     float x = fmod(i, WIDTH);
-    if (i < screensize) {
-        float red = x/WIDTH+frame;
-        if(red > 1) red = fmod(red, 1);
-        pixelcolors[i*3] = red;
-        float green = y/HEIGHT+frame;
-        if(green > 1) green = fmod(green, 1);
-        pixelcolors[(i*3)+1] = green;
-        float blue = y/x;
-        if(blue > 1) blue = fmod(blue, 1);
-        pixelcolors[(i*3)+2] = blue;
+
+    float3 cam = (float3)(camera[0], camera[1], camera[2]);
+
+    float3 origin = get_origin(plane, x, y, WIDTH, HEIGHT);
+
+    float3 direction = origin-cam;
+
+
+    float3 cur_dir = direction;
+    float3 cur_origin = origin;
+    float3 drawn_color = (float3)(0, 0, 0);
+    for(int depth = 3; depth > 0; depth--){
+        Collision collision = check_ray_collision(cur_dir, cur_origin, objectradius, objectpos, num_objects);
+        if(collision.objectindex == -1) continue;
+        
+        float3 col_color = check_collision_color(collision, ALI, cam, lightpos, lightdiffuse, lightspecular, objectcolor, objectambient, objectradius, objectpos, objectdiffuse, objectspecular, objectalbedo, num_lights, num_objects);
+        float3 obj_reflectivity = (float3)(objectreflectivity[collision.objectindex*3], objectreflectivity[collision.objectindex*3+1], objectreflectivity[collision.objectindex*3+2]);
+        float3 reflec_scaled = obj_reflectivity*(depth/2);
+        float3 reflec_color = col_color*reflec_scaled;
+        drawn_color = drawn_color+reflec_color;
+
+        float3 inverse = direction*-1;
+        float3 V = normalize(inverse);
+        float3 obj_center = (float3)(objectpos[collision.objectindex*3], objectpos[collision.objectindex*3+1], objectpos[collision.objectindex*3+2]);
+        float3 sub = collision.col_point-obj_center;
+        float3 N = normalize(sub);
+
+        float dotp = dot(V, N);
+        float3 normal_scaled = N*(2*dotp);
+        float3 reflectance = normal_scaled-V;
+        cur_dir = reflectance;
+        cur_origin = collision.col_point;
+
+        drawn_color = clamp(drawn_color, 0, 1);
     }
-};
+
+    pixelcolors[i*3] = drawn_color.x;
+    pixelcolors[i*3+1] = drawn_color.y;
+    pixelcolors[i*3+2] = drawn_color.z;
+};//'\0'

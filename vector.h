@@ -334,6 +334,24 @@ void destroy_scene(Scene* scene){
     return;
 }
 
+void destroy_flattened_scene(flattenedScene* scene){
+
+    free(scene->lightdiffuse);
+    free(scene->lightpos);
+    free(scene->lightspecular);
+    free(scene->objectalbedo);
+    free(scene->objectambient);
+    free(scene->objectcolor);
+    free(scene->objectdiffuse);
+    free(scene->objectpos);
+    free(scene->objectradius);
+    free(scene->objectreflectivity);
+    free(scene->objectspecular);
+
+    free(scene);
+    return;
+}
+
 float clamp(float num, float min, float max){//https://stackoverflow.com/questions/427477/fastest-way-to-clamp-a-real-fixed-floating-point-value
     const float t = num < min ? min : num;
     return t > max ? max : t;

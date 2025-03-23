@@ -285,17 +285,17 @@ flattenedScene* flattenScene(Scene* scene){
     LightList* lindex = scene->lights;
     int i = 0;
     while(lindex->light){
-        flattenned->lightpos[i] = lindex->light->position->x;
-        flattenned->lightpos[i+1] = lindex->light->position->y;
-        flattenned->lightpos[i+2] = lindex->light->position->z;
+        flattenned->lightpos[i*3] = lindex->light->position->x;
+        flattenned->lightpos[i*3+1] = lindex->light->position->y;
+        flattenned->lightpos[i*3+2] = lindex->light->position->z;
 
-        flattenned->lightdiffuse[i] = lindex->light->diffuse->red;
-        flattenned->lightdiffuse[i+1] = lindex->light->diffuse->green;
-        flattenned->lightdiffuse[i+2] = lindex->light->diffuse->blue;
+        flattenned->lightdiffuse[i*3] = lindex->light->diffuse->red;
+        flattenned->lightdiffuse[i*3+1] = lindex->light->diffuse->green;
+        flattenned->lightdiffuse[i*3+2] = lindex->light->diffuse->blue;
 
-        flattenned->lightspecular[i] = lindex->light->specular->red;
-        flattenned->lightspecular[i+1] = lindex->light->specular->green;
-        flattenned->lightspecular[i+2] = lindex->light->specular->blue;
+        flattenned->lightspecular[i*3] = lindex->light->specular->red;
+        flattenned->lightspecular[i*3+1] = lindex->light->specular->green;
+        flattenned->lightspecular[i*3+2] = lindex->light->specular->blue;
 
         i++;
         lindex = lindex->next;
@@ -304,24 +304,24 @@ flattenedScene* flattenScene(Scene* scene){
     ObjectList* oindex = scene->objects;
     i = 0;
     while(oindex->sphere){
-        flattenned->objectpos[i] = oindex->sphere->center->x;
-        flattenned->objectpos[i+1] = oindex->sphere->center->y;
-        flattenned->objectpos[i+2] = oindex->sphere->center->z;
-        flattenned->objectcolor[i] = oindex->sphere->color->red;
-        flattenned->objectcolor[i+1] = oindex->sphere->color->green;
-        flattenned->objectcolor[i+2] = oindex->sphere->color->blue;
-        flattenned->objectambient[i] = oindex->sphere->material->ambient->red;
-        flattenned->objectambient[i+1] = oindex->sphere->material->ambient->green;
-        flattenned->objectambient[i+2] = oindex->sphere->material->ambient->blue;
-        flattenned->objectdiffuse[i] = oindex->sphere->material->diffuse->red;
-        flattenned->objectdiffuse[i+1] = oindex->sphere->material->diffuse->green;
-        flattenned->objectdiffuse[i+2] = oindex->sphere->material->diffuse->blue;
-        flattenned->objectspecular[i] = oindex->sphere->material->specular->red;
-        flattenned->objectspecular[i+1] = oindex->sphere->material->specular->green;
-        flattenned->objectspecular[i+2] = oindex->sphere->material->specular->blue;
-        flattenned->objectreflectivity[i] = oindex->sphere->material->reflectivity->red;
-        flattenned->objectreflectivity[i+1] = oindex->sphere->material->reflectivity->green;
-        flattenned->objectreflectivity[i+2] = oindex->sphere->material->reflectivity->blue;
+        flattenned->objectpos[i*3] = oindex->sphere->center->x;
+        flattenned->objectpos[i*3+1] = oindex->sphere->center->y;
+        flattenned->objectpos[i*3+2] = oindex->sphere->center->z;
+        flattenned->objectcolor[i*3] = oindex->sphere->color->red;
+        flattenned->objectcolor[i*3+1] = oindex->sphere->color->green;
+        flattenned->objectcolor[i*3+2] = oindex->sphere->color->blue;
+        flattenned->objectambient[i*3] = oindex->sphere->material->ambient->red;
+        flattenned->objectambient[i*3+1] = oindex->sphere->material->ambient->green;
+        flattenned->objectambient[i*3+2] = oindex->sphere->material->ambient->blue;
+        flattenned->objectdiffuse[i*3] = oindex->sphere->material->diffuse->red;
+        flattenned->objectdiffuse[i*3+1] = oindex->sphere->material->diffuse->green;
+        flattenned->objectdiffuse[i*3+2] = oindex->sphere->material->diffuse->blue;
+        flattenned->objectspecular[i*3] = oindex->sphere->material->specular->red;
+        flattenned->objectspecular[i*3+1] = oindex->sphere->material->specular->green;
+        flattenned->objectspecular[i*3+2] = oindex->sphere->material->specular->blue;
+        flattenned->objectreflectivity[i*3] = oindex->sphere->material->reflectivity->red;
+        flattenned->objectreflectivity[i*3+1] = oindex->sphere->material->reflectivity->green;
+        flattenned->objectreflectivity[i*3+2] = oindex->sphere->material->reflectivity->blue;
         flattenned->objectradius[i] = oindex->sphere->radius;
         flattenned->objectalbedo[i] = oindex->sphere->material->albedo;
         
@@ -332,6 +332,7 @@ flattenedScene* flattenScene(Scene* scene){
     return flattenned;
 }
 
+//this is not loading as intended
 const char* load_strfile(char* file_path){
     FILE* file = fopen(file_path, "r");
 
