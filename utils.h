@@ -95,7 +95,7 @@ Scene* load_scene(char* json_str){
         if(!strcmp(index->string, "camera")){
             float* values = parse_string(index->valuestring, 3);
             camera = create_vector3D(values[0], values[1], values[2]);
-            free(values); // preciso fazer isso?
+            free(values);
         }
         else if(!strcmp(index->string, "plane")){
             float* values = parse_string(index->valuestring, 2);
@@ -226,25 +226,6 @@ Scene* load_scene(char* json_str){
     return scene;
 }
 
-/*
-    float camera[3];
-    float plane[12];
-    float ALI[3];
-    int num_lights;
-    int num_objects;
-    float* lightpos;
-    float* lightdiffuse;
-    float* lightspecular;
-    float* objectpos;
-    float* objectradius;
-    float* objectcolor;
-    float* objectambient;
-    float* objectdiffuse;
-    float* objectspecular;
-    float* objectreflectivity;
-    float* objectalbedo;
-*/
-
 flattenedScene* flattenScene(Scene* scene){
     flattenedScene* flattenned = (flattenedScene*)malloc(sizeof(flattenedScene));
 
@@ -332,7 +313,8 @@ flattenedScene* flattenScene(Scene* scene){
     return flattenned;
 }
 
-//this is not loading as intended
+//random compilling errors on the kernel code can probably come from here
+//they disappearead lately so it might be fine
 const char* load_strfile(char* file_path){
     FILE* file = fopen(file_path, "r");
 

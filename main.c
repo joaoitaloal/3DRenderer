@@ -187,7 +187,7 @@ Color* colorFromRecursiveRayCast(vector3D * dir, vector3D * origin, Scene* scene
 
     vector3D* inverse = scaleVector(dir, -1);
     vector3D* V = normalizeVector(inverse);
-    vector3D* sub = subtractVectors(collision->colObject->center, &collision->colPoint); //tá certo isso?
+    vector3D* sub = subtractVectors(collision->colObject->center, &collision->colPoint);
     vector3D* N = normalizeVector(sub);
     float dot = dotProduct(V, N);
     vector3D* normalScaled = scaleVector(N, 2*dot);
@@ -236,7 +236,6 @@ Color* antialliased(Scene* scene, int x, int y){
             break;
         }
 
-        //(1-alpha)*x1 + alpha*x2
         vector3D* scalex1 = scaleVector(scene->plane->x1, 1.0-alpha);
         vector3D* scalex2 = scaleVector(scene->plane->x2, alpha);
         vector3D * t = addVectors(scalex1, scalex2);
@@ -332,23 +331,23 @@ void tick_physics(Scene* scene){
 
     return;
 }
-/*xy: float[2]*
-    x:1080, y: 720
-    x = floor(num/1080); y = num mod 1080;
-    0,0: 0+1080*0
-    1,0: 1+1080*0
-    2,0: 2+1080*0
-    3,0: 3+1080*0
+/*xyz: float[3]*
+    x:1080, y: 720, z:4 <--- z seria o indice de raios extra pro antialliasing
+    x = num mod 1080; y = floor(num/1080) mod 720; z = floor(num/777600);
+    0,0,0: 0+1080*0+777600*0
+    1,0,0: 1+1080*0+777600*0
+    2,0,0: 2+1080*0+777600*0
     ...
-    1079,0: 1079+1080*0
-    0,1: 0+1080*1
+    1079,0,0: 1079+1080*0+777600*0
+    0,1,0: 0+1080*1+777600
     ...
-    3,5: 3+1080*5
+    0,0,1: 0+1080*0+777600*1
     ...
-    1079,719: 1079+1080*719
+    693,59,2: 693+1080*59+777600*2
+    ...
+    1079,719,3: 1079+1080*719+777600*3
 */
 int main(int argc, char* argv[]){
-    // ./main {inputmode} {input} {runmode} ?{filename/antialliasing}
 
     if(argc <= 1 || argc >= 7){
         printf("Unexpected number of arguments\n"
@@ -443,20 +442,17 @@ int main(int argc, char* argv[]){
         //iniciando opencl
         cl_int err;
         cl_platform_id plataforms;
-        cl_uint num_plataforms;
-        err = clGetPlatformIDs(1, &plataforms, &num_plataforms);
+        err = clGetPlatformIDs(1, &plataforms, NULL);
         if(err != CL_SUCCESS){
             printf("an error ocurred while finding available opencl plataforms");
             exit(1);
         }
         cl_device_id devices;
-        cl_uint num_devices;
-        err = clGetDeviceIDs(plataforms, CL_DEVICE_TYPE_GPU, 1, &devices, &num_devices);
+        err = clGetDeviceIDs(plataforms, CL_DEVICE_TYPE_GPU, 1, &devices, NULL);
         if(err != CL_SUCCESS){
             printf("an error ocurred while finding available opencl devices");
             exit(1);
         }
-        printf("%d %d\n", num_plataforms, num_devices);
         cl_context context = clCreateContext(NULL, 1, &devices, NULL, NULL, &err);
         if(!context || err != CL_SUCCESS){
             printf("An error ocurred while creating the context\n");
@@ -483,17 +479,14 @@ int main(int argc, char* argv[]){
         }
         err = clBuildProgram(program, 1, &devices, NULL, NULL, NULL);
         if (err == CL_BUILD_PROGRAM_FAILURE) {
-            // Determine the size of the log
+            //this block came from stackoveflow, will search for the link to credit when i can
             size_t log_size;
             clGetProgramBuildInfo(program, devices, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
         
-            // Allocate memory for the log
             char *log = (char *) malloc(log_size);
         
-            // Get the log
             clGetProgramBuildInfo(program, devices, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
         
-            // Print the log
             printf("%s\n", log);
             exit(1);
         }
@@ -502,22 +495,22 @@ int main(int argc, char* argv[]){
         
         const long screensize = WIDTH*HEIGHT;
         const size_t screensizebytes = screensize*sizeof(float)*3;
-        cl_mem pixelcolors = clCreateBuffer(context, CL_MEM_READ_WRITE, screensizebytes, NULL, NULL);
+        cl_mem pixelcolors = clCreateBuffer(context, CL_MEM_READ_WRITE, screensizebytes*4, NULL, NULL);
     
         cl_mem camera = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*3, NULL, NULL);
         cl_mem plane = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*12, NULL, NULL);
         cl_mem ALI = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*3, NULL, NULL);
-        cl_mem lightpos = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
-        cl_mem lightdiffuse = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
+        cl_mem lightpos = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float)*scene->num_lights*3, NULL, NULL);
+        cl_mem lightdiffuse = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float)*scene->num_lights*3, NULL, NULL);
         cl_mem lightspecular = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
-        cl_mem objectpos = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+        cl_mem objectpos = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float)*scene->num_objects*3, NULL, NULL);
         cl_mem objectcolor = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
         cl_mem objectambient = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
         cl_mem objectdiffuse = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
         cl_mem objectspecular = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
         cl_mem objectreflectivity = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
         cl_mem objectalbedo = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects, NULL, NULL);
-        cl_mem objectradius = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects, NULL, NULL);
+        cl_mem objectradius = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float)*scene->num_objects, NULL, NULL);
 
         flattenedScene* fscene = flattenScene(scene);
         clEnqueueWriteBuffer(queue, camera, CL_TRUE, 0, sizeof(float)*3, fscene->camera, 0, NULL, NULL);
@@ -636,7 +629,7 @@ int main(int argc, char* argv[]){
         }
 
 
-        size_t globalsize = screensize;
+        size_t globalsize = screensize*4;//times the amount of extra rays for the antialliasing
         size_t localsize = 128;
         err = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &globalsize, &localsize, 0, NULL, NULL);
         if (err != CL_SUCCESS) {
@@ -645,8 +638,8 @@ int main(int argc, char* argv[]){
         }
         clFinish(queue);
 
-        float* pixels = (float*)malloc(screensizebytes);
-        err = clEnqueueReadBuffer(queue, pixelcolors, CL_TRUE, 0, screensizebytes, pixels, 0, NULL, NULL);
+        float* pixels = (float*)malloc(screensizebytes*4);
+        err = clEnqueueReadBuffer(queue, pixelcolors, CL_TRUE, 0, screensizebytes*4, pixels, 0, NULL, NULL);
         if (err != CL_SUCCESS) {
             printf("Error reading queued buffer: %d\n", err);
             exit(1);
@@ -658,12 +651,27 @@ int main(int argc, char* argv[]){
             while(SDL_PollEvent(&e)){
                 if (e.type == SDL_EVENT_QUIT){
                     running = 0;
-                }
+                }/*else if(e.type == SDL_EVENT_KEY_UP){
+                    fscene->objectradius[0]+=0.1;
+                    err = clSetKernelArg(kernel, 16, sizeof(cl_mem), &objectradius);
+                    if (err != CL_SUCCESS) {
+                        printf("Error setting kernel arg: %d\n", err);
+                        exit(1);
+                    }
+                }*/
             }
             for(int i = 0; i < screensize; i++){
-                int y = floor(i/WIDTH);
-                int x = fmod(i, 1080);
-                SDL_SetRenderDrawColor(renderer, pixels[i*3]*255, pixels[(i*3)+1]*255, pixels[(i*3)+2]*255, 255);
+                int y = (int)floor((float)i/1080) % 720;
+                int x = i % 1080;
+                
+                float red = 0; float green = 0; float blue = 0;
+                for(int z = 0; z < 4; z++){
+                    red+=pixels[(i*3)+777600*z*3];
+                    green+=pixels[i*3+777600*z*3+1];
+                    blue+=pixels[i*3+777600*z*3+2];
+                }
+
+                SDL_SetRenderDrawColor(renderer, red*255, green*255, blue*255, 255);
                 SDL_RenderPoint(renderer, x, HEIGHT-y);
             }
 
@@ -683,7 +691,7 @@ int main(int argc, char* argv[]){
             }
             clFinish(queue);
     
-            err = clEnqueueReadBuffer(queue, pixelcolors, CL_TRUE, 0, screensizebytes, pixels, 0, NULL, NULL);
+            err = clEnqueueReadBuffer(queue, pixelcolors, CL_TRUE, 0, screensizebytes*4, pixels, 0, NULL, NULL);
             if (err != CL_SUCCESS) {
                 printf("Error reading queued buffer: %d\n", err);
                 exit(1);
