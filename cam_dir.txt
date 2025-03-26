@@ -1,0 +1,36 @@
+float3 mult_float9_float3(const float3 mat[], float3 v){
+    float3 result = (float3)(
+        mat[0].x*v.x + mat[0].y*v.y + mat[0].z*v.z,
+        mat[1].x*v.x + mat[1].y*v.y + mat[1].z*v.z,
+        mat[2].x*v.x + mat[2].y*v.y + mat[2].z*v.z
+    );
+    return result;
+}
+
+__kernel void cam_dir(__global float camera[], __global float plane[], int cam_xrel, int cam_yrel){
+    int i =  get_global_id(0);
+
+    float cam_rotx = (float)cam_xrel/4;
+    float cam_roty = (float)cam_yrel/4;
+    const float3 rot_maty[3] = {
+        (float3)(1, 0, 0),
+        (float3)(0, cos(cam_roty), -sin(cam_roty)),
+        (float3)(0, sin(cam_roty), cos(cam_roty))
+    };
+    const float3 rot_matx[3] = {
+        (float3)(cos(cam_rotx), 0, sin(cam_rotx)),
+        (float3)(0, 1, 0),
+        (float3)(-sin(cam_rotx), 0, cos(cam_rotx))
+    };
+
+    float3 planep = (float3)(plane[i*3+0], plane[i*3+1], plane[i*3+2]);
+    float3 cam = (float3)(camera[0], camera[1], camera[2]);
+    planep-=cam;
+    planep = mult_float9_float3(rot_matx, planep);
+    planep = mult_float9_float3(rot_maty, planep);
+    planep+=cam;
+
+    plane[i*3+0] = planep.x;
+    plane[i*3+1] = planep.y;
+    plane[i*3+2] = planep.z;
+}

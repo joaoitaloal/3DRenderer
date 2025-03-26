@@ -7,6 +7,8 @@
 #include <cJSON.h>
 #include "vector.h"
 
+#define SPEED 1
+
 char** str_split(char* a_str, const char a_delim)
 {
     //from https://stackoverflow.com/questions/9210528/split-string-with-delimiters-in-c
@@ -313,22 +315,65 @@ flattenedScene* flattenScene(Scene* scene){
     return flattenned;
 }
 
-//random compilling errors on the kernel code can probably come from here
-//they disappearead lately so it might be fine
+//compiling errors were coming from here but they should be fixed now
 const char* load_strfile(char* file_path){
     FILE* file = fopen(file_path, "r");
 
     fseek(file, 0, SEEK_END);
     long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    rewind(file);
 
-    char* str = (char*)malloc(file_size + 1);
+    char* str = (char*)malloc((file_size + 1)*sizeof(char));
 
-    fread(str, 1, file_size, file);
-    str[file_size] = 0;
+    long ending = fread(str, 1, file_size, file);
+    str[ending] = '\0';
 
     fclose(file);
     return str;
+}
+
+void handle_keyboard_input(const char* key_pressed, flattenedScene* fscene){
+    if(!strcmp(key_pressed, "W")){
+        fscene->camera[2] += SPEED;
+        fscene->plane[2] += SPEED;
+        fscene->plane[5] += SPEED;
+        fscene->plane[8] += SPEED;
+        fscene->plane[11] += SPEED;
+    }else if(!strcmp(key_pressed, "S")){
+        fscene->camera[2] -= SPEED;
+        fscene->plane[2] -= SPEED;
+        fscene->plane[5] -= SPEED;
+        fscene->plane[8] -= SPEED;
+        fscene->plane[11] -= SPEED;
+    }
+    if(!strcmp(key_pressed, "A")){
+        fscene->camera[0] += SPEED;
+        fscene->plane[0] += SPEED;
+        fscene->plane[3] += SPEED;
+        fscene->plane[6] += SPEED;
+        fscene->plane[9] += SPEED;
+    }else if(!strcmp(key_pressed, "D")){
+        fscene->camera[0] -= SPEED;
+        fscene->plane[0] -= SPEED;
+        fscene->plane[3] -= SPEED;
+        fscene->plane[6] -= SPEED;
+        fscene->plane[9] -= SPEED;
+    }
+    if(!strcmp(key_pressed, "Space")){
+        fscene->camera[1] -= SPEED;
+        fscene->plane[1] -= SPEED;
+        fscene->plane[4] -= SPEED;
+        fscene->plane[7] -= SPEED;
+        fscene->plane[10] -= SPEED;
+    }else if(!strcmp(key_pressed, "Left Shift")){
+        fscene->camera[1] += SPEED;
+        fscene->plane[1] += SPEED;
+        fscene->plane[4] += SPEED;
+        fscene->plane[7] += SPEED;
+        fscene->plane[10] += SPEED;
+    }
+
+    return;
 }
 
 #endif

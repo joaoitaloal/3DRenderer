@@ -145,7 +145,7 @@ float3 get_origin(__global float plane[], int x, int y, int z, const int WIDTH, 
     return t*(1-beta)+b*beta;
 }
 
-__kernel void render(__global float pixelcolors[], const unsigned int screensize, float frame,
+__kernel void render(__global float pixelcolors[], const unsigned int screensize,
  __global float camera[], __global float plane[], __global float ALI[], __global float lightpos[], __global float lightdiffuse[],
  __global float lightspecular[], __global float objectpos[], __global float objectcolor[], __global float objectambient[],
  __global float objectdiffuse[], __global float objectspecular[], __global float objectreflectivity[],
@@ -154,11 +154,6 @@ __kernel void render(__global float pixelcolors[], const unsigned int screensize
     const int antialliasingrays = 4;
 
     if (i > screensize*antialliasingrays) return;
-
-    /*plane[2]-=frame/10;
-    plane[5]+=frame/10;
-    plane[8]-=frame/10;
-    plane[11]+=frame/10;*/
 
     //x and y are screen pixel coordinates
     //z are antialliasing extra rays indexes(how is that written?)
@@ -205,4 +200,4 @@ __kernel void render(__global float pixelcolors[], const unsigned int screensize
     pixelcolors[i*3] = drawn_color.x/antialliasingrays;
     pixelcolors[i*3+1] = drawn_color.y/antialliasingrays;
     pixelcolors[i*3+2] = drawn_color.z/antialliasingrays;
-};//'\0'
+};
