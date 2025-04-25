@@ -9,6 +9,111 @@
 
 #define SPEED 1
 
+typedef struct OpenclContext{
+    flattenedScene* fscene;
+    cl_mem pixelcolors;
+    cl_mem camera;
+    cl_mem plane;
+    cl_mem ALI;
+    cl_mem lightpos;
+    cl_mem lightdiffuse;
+    cl_mem lightspecular;
+    cl_mem objectpos;
+    cl_mem objectcolor;
+    cl_mem objectambient;
+    cl_mem objectdiffuse;
+    cl_mem objectspecular;
+    cl_mem objectreflectivity;
+    cl_mem objectalbedo;
+    cl_mem objectradius;
+    cl_kernel render_kernel;
+    cl_kernel cam_kernel;
+    cl_program render_program;
+    cl_program cam_program;
+    cl_device_id devices;
+    cl_context context;
+} OpenclContext;
+
+OpenclContext* create_opencl_context(
+    flattenedScene* fscene,
+    cl_mem pixelcolors,
+    cl_mem camera,
+    cl_mem plane,
+    cl_mem ALI,
+    cl_mem lightpos,
+    cl_mem lightdiffuse,
+    cl_mem lightspecular,
+    cl_mem objectpos,
+    cl_mem objectcolor,
+    cl_mem objectambient,
+    cl_mem objectdiffuse,
+    cl_mem objectspecular,
+    cl_mem objectreflectivity,
+    cl_mem objectalbedo,
+    cl_mem objectradius,
+    cl_kernel render_kernel,
+    cl_kernel cam_kernel,
+    cl_program render_program,
+    cl_program cam_program,
+    cl_device_id devices,
+    cl_context context
+){
+    OpenclContext * oc;
+    oc = (OpenclContext*)malloc(sizeof(OpenclContext));
+
+    oc->fscene = fscene;
+    oc->pixelcolors = pixelcolors;
+    oc->camera = camera;
+    oc->plane = plane;
+    oc->ALI = ALI;
+    oc->lightpos = lightpos;
+    oc->lightdiffuse = lightdiffuse;
+    oc->lightspecular = lightspecular;
+    oc->objectpos = objectpos;
+    oc->objectcolor = objectcolor;
+    oc->objectambient = objectambient;
+    oc->objectdiffuse = objectdiffuse;
+    oc->objectspecular = objectspecular;
+    oc->objectreflectivity = objectreflectivity;
+    oc->objectalbedo = objectalbedo;
+    oc->objectradius = objectradius;
+    oc->render_kernel = render_kernel;
+    oc->cam_kernel = cam_kernel;
+    oc->render_program = render_program;
+    oc->cam_program = cam_program;
+    oc->devices = devices;
+    oc->context = context;
+
+    return oc;
+}
+
+void destroy_openclcontext(OpenclContext *opencl_context){
+    destroy_flattened_scene(opencl_context->fscene);
+    clReleaseMemObject(opencl_context->pixelcolors);
+    clReleaseMemObject(opencl_context->camera);
+    clReleaseMemObject(opencl_context->plane);
+    clReleaseMemObject(opencl_context->ALI);
+    clReleaseMemObject(opencl_context->lightpos);
+    clReleaseMemObject(opencl_context->lightdiffuse);
+    clReleaseMemObject(opencl_context->lightspecular);
+    clReleaseMemObject(opencl_context->objectpos);
+    clReleaseMemObject(opencl_context->objectcolor);
+    clReleaseMemObject(opencl_context->objectambient);
+    clReleaseMemObject(opencl_context->objectdiffuse);
+    clReleaseMemObject(opencl_context->objectspecular);
+    clReleaseMemObject(opencl_context->objectreflectivity);
+    clReleaseMemObject(opencl_context->objectalbedo);
+    clReleaseMemObject(opencl_context->objectradius);
+    clReleaseKernel(opencl_context->render_kernel);
+    clReleaseProgram(opencl_context->render_program);
+    clReleaseKernel(opencl_context->cam_kernel);
+    clReleaseProgram(opencl_context->cam_program);
+    clReleaseDevice(opencl_context->devices);
+    clReleaseContext(opencl_context->context);
+
+    free(opencl_context);
+}
+
 char** str_split(char* a_str, const char a_delim)
 {
     //from https://stackoverflow.com/questions/9210528/split-string-with-delimiters-in-c

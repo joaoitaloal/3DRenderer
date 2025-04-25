@@ -8,6 +8,7 @@
 #include <CL/cl.h>
 #include "vector.h"
 #include "utils.h"
+//#include <time.h>
 
 #define WIDTH 1080
 #define HEIGHT 720
@@ -325,12 +326,252 @@ void renderScene(SDL_Renderer* renderer, Scene* scene, int antialliasing){
     }
 }
 
-void tick_physics(Scene* scene){
+OpenclContext* init_opencl(SDL_Renderer* renderer, Scene* scene){
+    //iniciando opencl
+    cl_int err;
+    cl_platform_id plataforms;
+    err = clGetPlatformIDs(1, &plataforms, NULL);
+    if(err != CL_SUCCESS){
+        printf("an error ocurred while finding available opencl plataforms");
+        exit(1);
+    }
+    cl_device_id devices;
+    err = clGetDeviceIDs(plataforms, CL_DEVICE_TYPE_GPU, 1, &devices, NULL);
+    if(err != CL_SUCCESS){
+        printf("an error ocurred while finding available opencl devices");
+        exit(1);
+    }
+    cl_context context = clCreateContext(NULL, 1, &devices, NULL, NULL, &err);
+    if(!context || err != CL_SUCCESS){
+        printf("An error ocurred while creating the context\n");
+        exit(1);
+    }
 
-    addVectors2(scene->objects->sphere->center, 0, 0.3, -1);
+    const char* render_kernel_source = load_strfile("render.txt");
+    cl_program render_program = clCreateProgramWithSource(context, 1, &render_kernel_source, NULL, &err);
+    if(err != CL_SUCCESS){
+        printf("an error ocurred while creating the opencl program: %d\n", err);
+        exit(1);
+    }
+    err = clBuildProgram(render_program, 1, &devices, NULL, NULL, NULL);
+    if (err == CL_BUILD_PROGRAM_FAILURE) {
+        //this block came from stackoveflow, will search for the link to credit when i can
+        size_t log_size;
+        clGetProgramBuildInfo(render_program, devices, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+    
+        char *log = (char *) malloc(log_size);
+    
+        clGetProgramBuildInfo(render_program, devices, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+    
+        printf("%s\n", log);
+        exit(1);
+    }else if(err != CL_SUCCESS){
+        printf("an error ocurred while building the opencl program: %d\n", err);
+        exit(1);
+    }
+    const char* cam_kernel_source = load_strfile("cam_dir.txt");
+    cl_program cam_program = clCreateProgramWithSource(context, 1, &cam_kernel_source, NULL, &err);
+    if(err != CL_SUCCESS){
+        printf("an error ocurred while creating the opencl program: %d\n", err);
+        exit(1);
+    }
+    err = clBuildProgram(cam_program, 1, &devices, NULL, NULL, NULL);
+    if (err == CL_BUILD_PROGRAM_FAILURE) {
+        size_t log_size;
+        clGetProgramBuildInfo(cam_program, devices, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+    
+        char *log = (char *) malloc(log_size);
+    
+        clGetProgramBuildInfo(cam_program, devices, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+    
+        printf("%s\n", log);
+        exit(1);
+    }else if(err != CL_SUCCESS){
+        printf("an error ocurred while building the opencl program: %d\n", err);
+        exit(1);
+    }
 
-    return;
+    cl_command_queue queue = clCreateCommandQueueWithProperties(context, devices, NULL, NULL);
+    
+    const long screensize = WIDTH*HEIGHT;
+    const size_t screensizebytes = screensize*sizeof(float)*3;
+    cl_mem pixelcolors = clCreateBuffer(context, CL_MEM_READ_WRITE, screensizebytes*4, NULL, NULL);
+
+    cl_mem camera = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float)*3, NULL, NULL);
+    cl_mem  plane = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float)*12, NULL, NULL);
+    cl_mem ALI = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*3, NULL, NULL);
+    cl_mem lightpos = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
+    cl_mem lightdiffuse = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
+    cl_mem lightspecular = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
+    cl_mem objectpos = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+    cl_mem objectcolor = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+    cl_mem objectambient = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+    cl_mem objectdiffuse = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+    cl_mem objectspecular = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+    cl_mem objectreflectivity = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
+    cl_mem objectalbedo = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects, NULL, NULL);
+    cl_mem objectradius = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects, NULL, NULL);
+
+    flattenedScene* fscene = flattenScene(scene);
+    clEnqueueWriteBuffer(queue, camera, CL_TRUE, 0, sizeof(float)*3, fscene->camera, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, plane, CL_TRUE, 0, sizeof(float)*12, fscene->plane, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, ALI, CL_TRUE, 0, sizeof(float)*3, fscene->ALI, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, lightpos, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightpos, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, lightdiffuse, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightdiffuse, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, lightspecular, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightspecular, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, objectpos, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectpos, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, objectcolor, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectcolor, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, objectambient, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectambient, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, objectdiffuse, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectdiffuse, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, objectspecular, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectspecular, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, objectreflectivity, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectreflectivity, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, objectalbedo, CL_TRUE, 0, sizeof(float)*scene->num_objects, fscene->objectalbedo, 0, NULL, NULL);
+    clEnqueueWriteBuffer(queue, objectradius, CL_TRUE, 0, sizeof(float)*scene->num_objects, fscene->objectradius, 0, NULL, NULL);
+
+    cl_kernel render_kernel = clCreateKernel(render_program, "render", NULL);
+    cl_kernel cam_kernel = clCreateKernel(cam_program, "cam_dir", NULL);
+
+    err = clSetKernelArg(render_kernel, 0, sizeof(cl_mem), &pixelcolors);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 1, sizeof(long), &screensize);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 2, sizeof(cl_mem), &camera);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 3, sizeof(cl_mem), &plane);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 4, sizeof(cl_mem), &ALI);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 5, sizeof(cl_mem), &lightpos);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 6, sizeof(cl_mem), &lightdiffuse);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 7, sizeof(cl_mem), &lightspecular);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 8, sizeof(cl_mem), &objectpos);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 9, sizeof(cl_mem), &objectcolor);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 10, sizeof(cl_mem), &objectambient);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 11, sizeof(cl_mem), &objectdiffuse);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 12, sizeof(cl_mem), &objectspecular);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 13, sizeof(cl_mem), &objectreflectivity);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 14, sizeof(cl_mem), &objectalbedo);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 15, sizeof(cl_mem), &objectradius);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 16, sizeof(int), &fscene->num_lights);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(render_kernel, 17, sizeof(int), &fscene->num_objects);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+
+    err = clSetKernelArg(cam_kernel, 0, sizeof(cl_mem), &camera);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(cam_kernel, 1, sizeof(cl_mem), &plane);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    int cam_xmov = 0; int cam_ymov = 0;
+    err = clSetKernelArg(cam_kernel, 2, sizeof(int), &cam_xmov);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+    err = clSetKernelArg(cam_kernel, 3, sizeof(int), &cam_ymov);
+    if (err != CL_SUCCESS) {
+        printf("Error setting kernel arg: %d\n", err);
+        exit(1);
+    }
+
+    clReleaseCommandQueue(queue);
+
+    return create_opencl_context(
+        fscene,
+        pixelcolors,
+        camera,
+        plane,
+        ALI,
+        lightpos,
+        lightdiffuse,
+        lightspecular,
+        objectpos,
+        objectcolor,
+        objectambient,
+        objectdiffuse,
+        objectspecular,
+        objectreflectivity,
+        objectalbedo,
+        objectradius,
+        render_kernel,
+        cam_kernel,
+        render_program,
+        cam_program,
+        devices,
+        context
+    );
 }
+
 /*xyz: float[3]*
     x:1080, y: 720, z:4 <--- z seria o indice de raios extra pro antialliasing
     x = num mod 1080; y = floor(num/1080) mod 720; z = floor(num/777600);
@@ -367,8 +608,8 @@ int main(int argc, char* argv[]){
         printf("Error starting SDL\n");
         exit(1);
     }
-    Scene* scene;
 
+    Scene* scene;
     if(!strcmp(argv[1], "file")){
         FILE *file = fopen(argv[2], "r");
         if (file == NULL){
@@ -386,17 +627,9 @@ int main(int argc, char* argv[]){
         scene = load_scene(json_str);
 
         fclose(file);
-    }
-    else if(!strcmp(argv[1], "string")){//how do i make this work from the command line?
-        char* string = "";
-        strcpy(string, argv[2]);
-        string[strlen(string) - 1] = 0;
-        string = string+1;
-
-        scene = load_scene(string);
     }else{
         printf("Options:\n"
-        "'file' then provide a valid json file name or\n");
+        "'file' then provide a valid json file name\n");
         exit(2);
     }
     if(scene == NULL){
@@ -404,7 +637,6 @@ int main(int argc, char* argv[]){
         exit(1);
     }
 
-    SDL_Surface* surface = NULL;
     if(!strcmp(argv[3], "live")){
         int antialliasing = 0;
         if(argc > 4) antialliasing = 1;
@@ -417,7 +649,6 @@ int main(int argc, char* argv[]){
                 }
             }
             
-            tick_physics(scene);
             renderScene(renderer, scene, antialliasing);
 
             SDL_RenderPresent(renderer);
@@ -428,234 +659,98 @@ int main(int argc, char* argv[]){
             printf("Provide the desired filename as the second argument\n");
             exit(2);
         }
+        SDL_Surface* surface = NULL;
 
         renderScene(renderer, scene, 1);
+        surface = SDL_RenderReadPixels(renderer, NULL);
         SDL_RenderPresent(renderer);
 
-        surface = SDL_RenderReadPixels(renderer, NULL);
         if(IMG_SaveJPG(surface, strcat(argv[4], ".jpeg"), 100)) printf("Image saved\n");
         else printf("Error while saving the image\n");
 
         SDL_Delay(1000); //delay só dar pra ver rapidinho a imagem antes de fechar
+        SDL_DestroySurface(surface);
     }
-    else if(!strcmp(argv[3], "opencl")){
-        //iniciando opencl
+    else if(!strcmp(argv[3], "image_opencl")){
+        if(argv[4] == NULL){
+            printf("Provide the desired filename as the second argument\n");
+            exit(2);
+        }
         cl_int err;
-        cl_platform_id plataforms;
-        err = clGetPlatformIDs(1, &plataforms, NULL);
-        if(err != CL_SUCCESS){
-            printf("an error ocurred while finding available opencl plataforms");
-            exit(1);
-        }
-        cl_device_id devices;
-        err = clGetDeviceIDs(plataforms, CL_DEVICE_TYPE_GPU, 1, &devices, NULL);
-        if(err != CL_SUCCESS){
-            printf("an error ocurred while finding available opencl devices");
-            exit(1);
-        }
-        cl_context context = clCreateContext(NULL, 1, &devices, NULL, NULL, &err);
-        if(!context || err != CL_SUCCESS){
-            printf("An error ocurred while creating the context\n");
-            exit(1);
-        }
+        uint8_t* texture_pixels;
+        int pitch;
+        SDL_Surface* surface = NULL;
 
-        const char* render_kernel_source = load_strfile("render.txt");
-        cl_program render_program = clCreateProgramWithSource(context, 1, &render_kernel_source, NULL, &err);
-        if(err != CL_SUCCESS){
-            printf("an error ocurred while creating the opencl program: %d\n", err);
-            exit(1);
-        }
-        err = clBuildProgram(render_program, 1, &devices, NULL, NULL, NULL);
-        if (err == CL_BUILD_PROGRAM_FAILURE) {
-            //this block came from stackoveflow, will search for the link to credit when i can
-            size_t log_size;
-            clGetProgramBuildInfo(render_program, devices, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
-        
-            char *log = (char *) malloc(log_size);
-        
-            clGetProgramBuildInfo(render_program, devices, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
-        
-            printf("%s\n", log);
-            exit(1);
-        }else if(err != CL_SUCCESS){
-            printf("an error ocurred while building the opencl program: %d\n", err);
-            exit(1);
-        }
-        const char* cam_kernel_source = load_strfile("cam_dir.txt");
-        cl_program cam_program = clCreateProgramWithSource(context, 1, &cam_kernel_source, NULL, &err);
-        if(err != CL_SUCCESS){
-            printf("an error ocurred while creating the opencl program: %d\n", err);
-            exit(1);
-        }
-        err = clBuildProgram(cam_program, 1, &devices, NULL, NULL, NULL);
-        if (err == CL_BUILD_PROGRAM_FAILURE) {
-            //this block came from stackoveflow, will search for the link to credit when i can
-            size_t log_size;
-            clGetProgramBuildInfo(cam_program, devices, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
-        
-            char *log = (char *) malloc(log_size);
-        
-            clGetProgramBuildInfo(cam_program, devices, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
-        
-            printf("%s\n", log);
-            exit(1);
-        }else if(err != CL_SUCCESS){
-            printf("an error ocurred while building the opencl program: %d\n", err);
-            exit(1);
-        }
+        OpenclContext *opencl_context = init_opencl(renderer, scene);
+        cl_command_queue queue = clCreateCommandQueueWithProperties(opencl_context->context, opencl_context->devices, NULL, NULL);
+        SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
 
-        cl_command_queue queue = clCreateCommandQueueWithProperties(context, devices, NULL, NULL);
-        
         const long screensize = WIDTH*HEIGHT;
         const size_t screensizebytes = screensize*sizeof(float)*3;
-        cl_mem pixelcolors = clCreateBuffer(context, CL_MEM_READ_WRITE, screensizebytes*4, NULL, NULL);
-    
-        cl_mem camera = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float)*3, NULL, NULL);
-        cl_mem plane = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float)*12, NULL, NULL);
-        cl_mem ALI = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*3, NULL, NULL);
-        cl_mem lightpos = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
-        cl_mem lightdiffuse = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
-        cl_mem lightspecular = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_lights*3, NULL, NULL);
-        cl_mem objectpos = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
-        cl_mem objectcolor = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
-        cl_mem objectambient = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
-        cl_mem objectdiffuse = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
-        cl_mem objectspecular = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
-        cl_mem objectreflectivity = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects*3, NULL, NULL);
-        cl_mem objectalbedo = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects, NULL, NULL);
-        cl_mem objectradius = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*scene->num_objects, NULL, NULL);
 
-        flattenedScene* fscene = flattenScene(scene);
-        clEnqueueWriteBuffer(queue, camera, CL_TRUE, 0, sizeof(float)*3, fscene->camera, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, plane, CL_TRUE, 0, sizeof(float)*12, fscene->plane, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, ALI, CL_TRUE, 0, sizeof(float)*3, fscene->ALI, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, lightpos, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightpos, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, lightdiffuse, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightdiffuse, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, lightspecular, CL_TRUE, 0, sizeof(float)*scene->num_lights*3, fscene->lightspecular, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, objectpos, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectpos, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, objectcolor, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectcolor, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, objectambient, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectambient, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, objectdiffuse, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectdiffuse, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, objectspecular, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectspecular, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, objectreflectivity, CL_TRUE, 0, sizeof(float)*scene->num_objects*3, fscene->objectreflectivity, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, objectalbedo, CL_TRUE, 0, sizeof(float)*scene->num_objects, fscene->objectalbedo, 0, NULL, NULL);
-        clEnqueueWriteBuffer(queue, objectradius, CL_TRUE, 0, sizeof(float)*scene->num_objects, fscene->objectradius, 0, NULL, NULL);
+        size_t globalsize = screensize*4;//times the amount of extra rays for the antialliasing
+        size_t localsize = 128;
+        float* pixels = (float*)malloc(screensizebytes*4);
 
-        cl_kernel render_kernel = clCreateKernel(render_program, "render", NULL);
-        cl_kernel cam_kernel = clCreateKernel(cam_program, "cam_dir", NULL);
+        err = clEnqueueNDRangeKernel(queue, opencl_context->render_kernel, 1, NULL, &globalsize, &localsize, 0, NULL, NULL);
+        if (err != CL_SUCCESS) {
+            printf("Error executing queued command: %d\n", err);
+            exit(1);
+        }
+        clFinish(queue);
 
-        err = clSetKernelArg(render_kernel, 0, sizeof(cl_mem), &pixelcolors);
+        err = clEnqueueReadBuffer(queue, opencl_context->pixelcolors, CL_TRUE, 0, screensizebytes*4, pixels, 0, NULL, NULL);
         if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
+            printf("Error reading queued buffer: %d\n", err);
             exit(1);
         }
-        err = clSetKernelArg(render_kernel, 1, sizeof(long), &screensize);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 2, sizeof(cl_mem), &camera);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 3, sizeof(cl_mem), &plane);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 4, sizeof(cl_mem), &ALI);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 5, sizeof(cl_mem), &lightpos);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 6, sizeof(cl_mem), &lightdiffuse);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 7, sizeof(cl_mem), &lightspecular);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 8, sizeof(cl_mem), &objectpos);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 9, sizeof(cl_mem), &objectcolor);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 10, sizeof(cl_mem), &objectambient);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 11, sizeof(cl_mem), &objectdiffuse);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 12, sizeof(cl_mem), &objectspecular);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 13, sizeof(cl_mem), &objectreflectivity);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 14, sizeof(cl_mem), &objectalbedo);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 15, sizeof(cl_mem), &objectradius);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 16, sizeof(int), &fscene->num_lights);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(render_kernel, 17, sizeof(int), &fscene->num_objects);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
+        clFinish(queue);
 
-        err = clSetKernelArg(cam_kernel, 0, sizeof(cl_mem), &camera);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
+        SDL_LockTexture(texture, NULL, (void**)&texture_pixels, &pitch);
+        
+        for(int i = 0; i < screensize; i++){
+            int y = (int)floor((float)i/1080) % 720;
+            int x = i % 1080;
+
+            uint32_t* texture_row = (uint32_t*)(texture_pixels + y * pitch);
+            
+            float red = 0; float green = 0; float blue = 0;
+            for(int z = 0; z < 4; z++){
+                int pos = (i*3)+777600*z*3;
+                red+=pixels[pos];
+                green+=pixels[pos+1];
+                blue+=pixels[pos+2];
+            }
+
+            texture_row[x] = (255 << 24) | ((uint8_t)(red*255) << 16) | ((uint8_t)(green*255) << 8) | (uint8_t)(blue*255); // ARGB8888
         }
-        err = clSetKernelArg(cam_kernel, 1, sizeof(cl_mem), &plane);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
+        SDL_UnlockTexture(texture);
+        SDL_RenderTexture(renderer, texture, NULL, NULL);
+
+        surface = SDL_RenderReadPixels(renderer, NULL);
+        SDL_RenderPresent(renderer);
+
+        if(IMG_SaveJPG(surface, strcat(argv[4], ".jpeg"), 100)) printf("Image saved\n");
+        else printf("Error while saving the image\n");
+
+        destroy_openclcontext(opencl_context);
+        clReleaseCommandQueue(queue);
+        SDL_DestroySurface(surface);
+    }
+    else if(!strcmp(argv[3], "opencl")){
+        cl_int err;    
+        uint8_t* texture_pixels;
+        int pitch;
+
+        OpenclContext *opencl_context = init_opencl(renderer, scene);
+        flattenedScene *fscene = opencl_context->fscene;
+        cl_command_queue queue = clCreateCommandQueueWithProperties(opencl_context->context, opencl_context->devices, NULL, NULL);
+        SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
+
+        const long screensize = WIDTH*HEIGHT;
+        const size_t screensizebytes = screensize*sizeof(float)*3;
+
         int cam_xmov = 0; int cam_ymov = 0; int cam_moved = 0;
-        err = clSetKernelArg(cam_kernel, 2, sizeof(int), &cam_xmov);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
-        err = clSetKernelArg(cam_kernel, 3, sizeof(int), &cam_ymov);
-        if (err != CL_SUCCESS) {
-            printf("Error setting kernel arg: %d\n", err);
-            exit(1);
-        }
 
         size_t globalsize = screensize*4;//times the amount of extra rays for the antialliasing
         size_t localsize = 128;
@@ -681,12 +776,12 @@ int main(int argc, char* argv[]){
                         handle_keyboard_input(key_pressed, fscene);
                     }
                     if(cam_moved){
-                        err = clSetKernelArg(cam_kernel, 2, sizeof(int), &cam_xmov);
+                        err = clSetKernelArg(opencl_context->cam_kernel, 2, sizeof(int), &cam_xmov);
                         if (err != CL_SUCCESS) {
                             printf("Error setting kernel arg: %d\n", err);
                             exit(1);
                         }
-                        err = clSetKernelArg(cam_kernel, 3, sizeof(int), &cam_ymov);
+                        err = clSetKernelArg(opencl_context->cam_kernel, 3, sizeof(int), &cam_ymov);
                         if (err != CL_SUCCESS) {
                             printf("Error setting kernel arg: %d\n", err);
                             exit(1);
@@ -694,87 +789,83 @@ int main(int argc, char* argv[]){
                     }
                 }
             }
-            
-            clEnqueueWriteBuffer(queue, camera, CL_TRUE, 0, sizeof(float)*3, fscene->camera, 0, NULL, NULL);
-            clEnqueueWriteBuffer(queue, plane, CL_TRUE, 0, sizeof(float)*12, fscene->plane, 0, NULL, NULL);
 
+            err = clEnqueueWriteBuffer(queue, opencl_context->camera, CL_TRUE, 0, sizeof(float)*3, fscene->camera, 0, NULL, NULL);
+            if (err != CL_SUCCESS) {
+                printf("Error executing queued command: %d\n", err);
+                exit(1);
+            }
+            err = clEnqueueWriteBuffer(queue, opencl_context->plane, CL_TRUE, 0, sizeof(float)*12, fscene->plane, 0, NULL, NULL);
+            if (err != CL_SUCCESS) {
+                printf("Error executing queued command: %d\n", err);
+                exit(1);
+            }
+            
             if(cam_moved){
                 const size_t four = 4;//ill probably look at this later and wonder what was i doing
-                err = clEnqueueNDRangeKernel(queue, cam_kernel, 1, NULL, &four, &four, 0, NULL, NULL);
+                err = clEnqueueNDRangeKernel(queue, opencl_context->cam_kernel, 1, NULL, &four, &four, 0, NULL, NULL);
                 if (err != CL_SUCCESS) {
                     printf("Error executing queued command: %d\n", err);
                     exit(1);
                 }
                 cam_xmov = 0; cam_ymov = 0; cam_moved = 0;
             }
-
-            err = clEnqueueNDRangeKernel(queue, render_kernel, 1, NULL, &globalsize, &localsize, 0, NULL, NULL);
+            
+            err = clEnqueueNDRangeKernel(queue, opencl_context->render_kernel, 1, NULL, &globalsize, &localsize, 0, NULL, NULL);
             if (err != CL_SUCCESS) {
                 printf("Error executing queued command: %d\n", err);
                 exit(1);
             }
             clFinish(queue);
-    
-            err = clEnqueueReadBuffer(queue, pixelcolors, CL_TRUE, 0, screensizebytes*4, pixels, 0, NULL, NULL);
+
+            err = clEnqueueReadBuffer(queue, opencl_context->pixelcolors, CL_TRUE, 0, screensizebytes*4, pixels, 0, NULL, NULL);
             if (err != CL_SUCCESS) {
                 printf("Error reading queued buffer: %d\n", err);
                 exit(1);
             }
-            err = clEnqueueReadBuffer(queue, camera, CL_TRUE, 0, sizeof(float)*3, fscene->camera, 0, NULL, NULL);
+            err = clEnqueueReadBuffer(queue, opencl_context->camera, CL_TRUE, 0, sizeof(float)*3, fscene->camera, 0, NULL, NULL);
             if (err != CL_SUCCESS) {
                 printf("Error reading queued buffer: %d\n", err);
                 exit(1);
             }
-            err = clEnqueueReadBuffer(queue, plane, CL_TRUE, 0, sizeof(float)*12, fscene->plane, 0, NULL, NULL);
+            err = clEnqueueReadBuffer(queue, opencl_context->plane, CL_TRUE, 0, sizeof(float)*12, fscene->plane, 0, NULL, NULL);
             if (err != CL_SUCCESS) {
                 printf("Error reading queued buffer: %d\n", err);
                 exit(1);
             }
 
+            clFinish(queue);
+
+            SDL_LockTexture(texture, NULL, (void**)&texture_pixels, &pitch);
+            
+            SDL_RenderClear(renderer);
             for(int i = 0; i < screensize; i++){
                 int y = (int)floor((float)i/1080) % 720;
                 int x = i % 1080;
+
+                uint32_t* texture_row = (uint32_t*)(texture_pixels + y * pitch);
                 
                 float red = 0; float green = 0; float blue = 0;
                 for(int z = 0; z < 4; z++){
-                    red+=pixels[(i*3)+777600*z*3];
-                    green+=pixels[i*3+777600*z*3+1];
-                    blue+=pixels[i*3+777600*z*3+2];
+                    int pos = (i*3)+777600*z*3;
+                    red+=pixels[pos];
+                    green+=pixels[pos+1];
+                    blue+=pixels[pos+2];
                 }
 
-                SDL_SetRenderDrawColor(renderer, red*255, green*255, blue*255, 255);
-                SDL_RenderPoint(renderer, x, HEIGHT-y);
+                texture_row[x] = (255 << 24) | ((uint8_t)(red*255) << 16) | ((uint8_t)(green*255) << 8) | (uint8_t)(blue*255); // ARGB8888
             }
-
+            SDL_UnlockTexture(texture);
+            SDL_RenderTexture(renderer, texture, NULL, NULL);
             SDL_RenderPresent(renderer);
         }
-
-        destroy_flattened_scene(fscene);
-        clReleaseMemObject(pixelcolors);
-        clReleaseMemObject(camera);
-        clReleaseMemObject(plane);
-        clReleaseMemObject(ALI);
-        clReleaseMemObject(lightpos);
-        clReleaseMemObject(lightdiffuse);
-        clReleaseMemObject(lightspecular);
-        clReleaseMemObject(objectpos);
-        clReleaseMemObject(objectcolor);
-        clReleaseMemObject(objectambient);
-        clReleaseMemObject(objectdiffuse);
-        clReleaseMemObject(objectspecular);
-        clReleaseMemObject(objectreflectivity);
-        clReleaseMemObject(objectalbedo);
-        clReleaseMemObject(objectradius);
-        clReleaseKernel(render_kernel);
-        clReleaseProgram(render_program);
-        clReleaseKernel(cam_kernel);
-        clReleaseProgram(cam_program);
+        
+        destroy_openclcontext(opencl_context);
+        SDL_DestroyTexture(texture);
         clReleaseCommandQueue(queue);
-        clReleaseContext(context);
     }
 
     destroy_scene(scene);
-    SDL_DestroySurface(surface);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();

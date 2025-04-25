@@ -5,7 +5,9 @@ The rendering method used here is raytracing, SDL3 is used to create the window.
 
 The scene currently supports only spheres and lights, the renderer has shadows, reflections and an antialliasing method.
 
-## Compiling observations
+## Installation and Compiling observations
+
+The main program is in main.c, image.c is a custom modification i made that only create images, if you want to use it you will need to download [stb_image_write.h](https://github.com/nothings/stb/blob/master/stb_image_write.h).
 
 You will need to install the [SDL3 library](https://github.com/libsdl-org/SDL) to compile the code, it is possible to use SDL2 but you will need to modify the code since there are some functions that changed between versions.
 Since the code actually works independently of SDL you can use any other method of placing pixels on screen.
