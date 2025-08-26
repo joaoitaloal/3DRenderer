@@ -776,12 +776,12 @@ int main(int argc, char* argv[]){
                         handle_keyboard_input(key_pressed, fscene);
                     }
                     if(cam_moved){
-                        err = clSetKernelArg(opencl_context->cam_kernel, 2, sizeof(int), &cam_xmov);
+                        err = clSetKernelArg(opencl_context->post_processing_kernel, 2, sizeof(int), &cam_xmov);
                         if (err != CL_SUCCESS) {
                             printf("Error setting kernel arg: %d\n", err);
                             exit(1);
                         }
-                        err = clSetKernelArg(opencl_context->cam_kernel, 3, sizeof(int), &cam_ymov);
+                        err = clSetKernelArg(opencl_context->post_processing_kernel, 3, sizeof(int), &cam_ymov);
                         if (err != CL_SUCCESS) {
                             printf("Error setting kernel arg: %d\n", err);
                             exit(1);
@@ -803,7 +803,7 @@ int main(int argc, char* argv[]){
             
             if(cam_moved){
                 const size_t four = 4;//ill probably look at this later and wonder what was i doing
-                err = clEnqueueNDRangeKernel(queue, opencl_context->cam_kernel, 1, NULL, &four, &four, 0, NULL, NULL);
+                err = clEnqueueNDRangeKernel(queue, opencl_context->post_processing_kernel, 1, NULL, &four, &four, 0, NULL, NULL);
                 if (err != CL_SUCCESS) {
                     printf("Error executing queued command: %d\n", err);
                     exit(1);

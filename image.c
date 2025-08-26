@@ -13,7 +13,7 @@
 #define WIDTH 1080
 #define HEIGHT 720
 
-OpenclContext* init_opencl(Scene* scene){
+OpenclContext* init_opencl(Scene* scene, char* postproc_file){
     //iniciando opencl
     cl_int err;
     cl_platform_id plataforms;
@@ -56,23 +56,23 @@ OpenclContext* init_opencl(Scene* scene){
         printf("an error ocurred while building the opencl program: %d\n", err);
         exit(1);
     }
-    const char* cam_kernel_source = load_strfile("cam_dir.txt");
-    cl_program cam_program = clCreateProgramWithSource(context, 1, &cam_kernel_source, NULL, &err);
+    const char* post_processing_source = load_strfile(postproc_file);
+    cl_program post_processing_program = clCreateProgramWithSource(context, 1, &post_processing_source, NULL, &err);
     if(err != CL_SUCCESS){
         printf("an error ocurred while creating the opencl program: %d\n", err);
         exit(1);
     }
-    err = clBuildProgram(cam_program, 1, &devices, NULL, NULL, NULL);
+    err = clBuildProgram(post_processing_program, 1, &devices, NULL, NULL, NULL);
     if (err == CL_BUILD_PROGRAM_FAILURE) {
         size_t log_size;
-        clGetProgramBuildInfo(cam_program, devices, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+        clGetProgramBuildInfo(post_processing_program, devices, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
     
         char *log = (char *) malloc(log_size);
     
-        clGetProgramBuildInfo(cam_program, devices, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+        clGetProgramBuildInfo(post_processing_program, devices, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
     
         printf("%s\n", log);
-        exit(1);
+        exit(5);
     }else if(err != CL_SUCCESS){
         printf("an error ocurred while building the opencl program: %d\n", err);
         exit(1);
@@ -116,7 +116,7 @@ OpenclContext* init_opencl(Scene* scene){
     clEnqueueWriteBuffer(queue, objectradius, CL_TRUE, 0, sizeof(float)*scene->num_objects, fscene->objectradius, 0, NULL, NULL);
 
     cl_kernel render_kernel = clCreateKernel(render_program, "render", NULL);
-    cl_kernel cam_kernel = clCreateKernel(cam_program, "cam_dir", NULL);
+    cl_kernel post_processing_kernel = clCreateKernel(post_processing_program, "postprocess", NULL);
 
     err = clSetKernelArg(render_kernel, 0, sizeof(cl_mem), &pixelcolors);
     if (err != CL_SUCCESS) {
@@ -209,24 +209,8 @@ OpenclContext* init_opencl(Scene* scene){
         exit(1);
     }
 
-    err = clSetKernelArg(cam_kernel, 0, sizeof(cl_mem), &camera);
-    if (err != CL_SUCCESS) {
-        printf("Error setting kernel arg: %d\n", err);
-        exit(1);
-    }
-    err = clSetKernelArg(cam_kernel, 1, sizeof(cl_mem), &plane);
-    if (err != CL_SUCCESS) {
-        printf("Error setting kernel arg: %d\n", err);
-        exit(1);
-    }
-    int cam_xmov = 0; int cam_ymov = 0;
-    err = clSetKernelArg(cam_kernel, 2, sizeof(int), &cam_xmov);
-    if (err != CL_SUCCESS) {
-        printf("Error setting kernel arg: %d\n", err);
-        exit(1);
-    }
-    err = clSetKernelArg(cam_kernel, 3, sizeof(int), &cam_ymov);
-    if (err != CL_SUCCESS) {
+    err = clSetKernelArg(post_processing_kernel, 0, sizeof(cl_mem), &pixelcolors);
+    if (err != CL_SUCCESS) { 
         printf("Error setting kernel arg: %d\n", err);
         exit(1);
     }
@@ -251,9 +235,9 @@ OpenclContext* init_opencl(Scene* scene){
         objectalbedo,
         objectradius,
         render_kernel,
-        cam_kernel,
+        post_processing_kernel,
         render_program,
-        cam_program,
+        post_processing_program,
         devices,
         context
     );
@@ -284,9 +268,22 @@ int main(int argc, char* argv[]){
         exit(1);
     }
 
+    scene->plane->x1->x += scene->camera->x; //Manually doing this so that the users can
+    scene->plane->x2->x += scene->camera->x; //change the camera position without distorting
+    scene->plane->x3->x += scene->camera->x; //the view
+    scene->plane->x4->x += scene->camera->x;
+    scene->plane->x1->y += scene->camera->y;
+    scene->plane->x2->y += scene->camera->y;
+    scene->plane->x3->y += scene->camera->y;
+    scene->plane->x4->y += scene->camera->y;
+    scene->plane->x1->z += scene->camera->z+1;
+    scene->plane->x2->z += scene->camera->z+1;
+    scene->plane->x3->z += scene->camera->z+1;
+    scene->plane->x4->z += scene->camera->z+1;
+
     cl_int err;
 
-    OpenclContext *opencl_context = init_opencl(scene);
+    OpenclContext *opencl_context = init_opencl(scene, argv[3]);
     cl_command_queue queue = clCreateCommandQueueWithProperties(opencl_context->context, opencl_context->devices, NULL, NULL);
 
     const long screensize = WIDTH*HEIGHT;
@@ -297,6 +294,13 @@ int main(int argc, char* argv[]){
     float* pixels = (float*)malloc(screensizebytes*4);
 
     err = clEnqueueNDRangeKernel(queue, opencl_context->render_kernel, 1, NULL, &globalsize, &localsize, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        printf("Error executing queued command: %d\n", err);
+        exit(1);
+    }
+    clFinish(queue);
+
+    err = clEnqueueNDRangeKernel(queue, opencl_context->post_processing_kernel, 1, NULL, &globalsize, &localsize, 0, NULL, NULL);
     if (err != CL_SUCCESS) {
         printf("Error executing queued command: %d\n", err);
         exit(1);

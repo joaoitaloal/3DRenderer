@@ -27,9 +27,9 @@ typedef struct OpenclContext{
     cl_mem objectalbedo;
     cl_mem objectradius;
     cl_kernel render_kernel;
-    cl_kernel cam_kernel;
+    cl_kernel post_processing_kernel;
     cl_program render_program;
-    cl_program cam_program;
+    cl_program post_processing_program;
     cl_device_id devices;
     cl_context context;
 } OpenclContext;
@@ -52,9 +52,9 @@ OpenclContext* create_opencl_context(
     cl_mem objectalbedo,
     cl_mem objectradius,
     cl_kernel render_kernel,
-    cl_kernel cam_kernel,
+    cl_kernel post_processing_kernel,
     cl_program render_program,
-    cl_program cam_program,
+    cl_program post_processing_program,
     cl_device_id devices,
     cl_context context
 ){
@@ -78,9 +78,9 @@ OpenclContext* create_opencl_context(
     oc->objectalbedo = objectalbedo;
     oc->objectradius = objectradius;
     oc->render_kernel = render_kernel;
-    oc->cam_kernel = cam_kernel;
+    oc->post_processing_kernel = post_processing_kernel;
     oc->render_program = render_program;
-    oc->cam_program = cam_program;
+    oc->post_processing_program = post_processing_program;
     oc->devices = devices;
     oc->context = context;
 
@@ -106,8 +106,8 @@ void destroy_openclcontext(OpenclContext *opencl_context){
     clReleaseMemObject(opencl_context->objectradius);
     clReleaseKernel(opencl_context->render_kernel);
     clReleaseProgram(opencl_context->render_program);
-    clReleaseKernel(opencl_context->cam_kernel);
-    clReleaseProgram(opencl_context->cam_program);
+    clReleaseKernel(opencl_context->post_processing_kernel);
+    clReleaseProgram(opencl_context->post_processing_program);
     clReleaseDevice(opencl_context->devices);
     clReleaseContext(opencl_context->context);
 
